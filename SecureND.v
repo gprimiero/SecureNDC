@@ -14,7 +14,7 @@ Module Type REPOSITORY <: OrderedType.
   Axiom eq_refl: forall x: t, eq x x.
   Axiom eq_sym: forall x y: t, eq x y -> eq y x.
   Axiom eq_trans: forall x y z: t, eq x y -> eq y z -> eq x z.
-  Instance eq_equiv : Equivalence eq := Build_Equivalence t eq eq_refl eq_sym eq_trans. 
+  Instance eq_equiv : Equivalence eq := Build_Equivalence eq eq_refl eq_sym eq_trans. 
 
   Axiom lt_trans: forall x y z: t, lt x y -> lt y z -> lt x z.
   Axiom lt_not_eq: forall x y: t, lt x y -> ~ eq x y.
@@ -36,7 +36,7 @@ Module Type ATOM (G: REPOSITORY) <: DecidableType.
   Axiom eq_refl: forall x: t, eq x x.
   Axiom eq_sym: forall x y: t, eq x y -> eq y x.
   Axiom eq_trans: forall x y z: t, eq x y -> eq y z -> eq x z.
-  Instance eq_equiv : Equivalence eq := Build_Equivalence t eq eq_refl eq_sym eq_trans. 
+  Instance eq_equiv : Equivalence eq := Build_Equivalence eq eq_refl eq_sym eq_trans. 
   
   Parameter eq_dec: forall x y, { eq x y } + { ~ eq x y }.
 End ATOM.
@@ -175,7 +175,7 @@ Module Resource (R: REPOSITORY) (Atom: ATOM R) <: DecidableType.
         | intros; apply IHx with y; [apply H | apply H0]]
       ].
   Qed.
-  Instance eq_equiv: Equivalence eq := Build_Equivalence _ eq eq_refl eq_sym eq_trans.
+  Instance eq_equiv: Equivalence eq := Build_Equivalence eq eq_refl eq_sym eq_trans.
 
   Lemma eq_dec: forall x y, { eq x y } + { ~ eq x y }.
   Proof.
@@ -306,7 +306,7 @@ Variable Pb: { x | typable_profile (`Rb) x }.
  *)
 Inductive NDProof: list P.t -> P.E.t -> Prop :=
   | nd_atom_mess: forall b,
-      well_formed (`Pa) -> typable (`Rb) b ->
+      (* well_formed (`Pa) -> *) typable (`Rb) b ->
       NDProof (`Pa::`Pb::nil) b
   | nd_and_intro: forall f1 f2,
       NDProof (`Pa::nil) f1 -> typable Ra f1 -> 
