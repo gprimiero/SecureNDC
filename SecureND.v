@@ -46,7 +46,8 @@ Inductive Resource {A: Type} {S: Type}: Type :=
 | nd_atom: A -> Resource
 | nd_impl: Resource -> Resource -> Resource
 | nd_and: Resource -> Resource -> Resource
-| nd_or: Resource -> Resource -> Resource 
+| nd_or: Resource -> Resource -> Resource
+| nd_not: Resource -> Resource
 | nd_read: Resource -> Resource
 | nd_write: Resource -> Resource
 | nd_trust: Resource -> Resource.
@@ -64,6 +65,8 @@ Module Resource (R: REPOSITORY) (Atom: ATOM R) <: DecidableType.
     match y with nd_and y1 y2 => eq x1 y1 /\ eq x2 y2 | _ => False end
   | nd_or x1 x2 =>
     match y with nd_or y1 y2 => eq x1 y1 /\ eq x2 y2 | _ => False end
+  | nd_not x1 =>
+    match y with nd_not y1 => eq x1 y1 | _ => False end
   | nd_read x' => match y with nd_read y' => eq x' y' | _ => False end
   | nd_write x' => match y with nd_write y' => eq x' y' | _ => False end
   | nd_trust x' => match y with nd_trust y' => eq x' y' | _ => False end
@@ -71,164 +74,44 @@ Module Resource (R: REPOSITORY) (Atom: ATOM R) <: DecidableType.
 
   Lemma eq_refl: forall x, eq x x.
   Proof.
-    induction x;
-      [apply Atom.eq_refl |
-      (split; [apply IHx1 | apply IHx2]) .. |
-      apply IHx | apply IHx | apply IHx].
+  induction x;
+    first [ apply Atom.eq_refl
+    | (split; [apply IHx1 | apply IHx2])
+    | apply IHx
+    ].
   Qed.
   Lemma eq_sym: forall x y, eq x y -> eq y x.
   Proof.
-    induction x.
-      destruct y;
-      [apply Atom.eq_sym |
-      (intros X; contradiction X) ..].
-      destruct y;
-      [intros X; contradiction X |
-       split; [apply IHx1; apply H | apply IHx2; apply H] |
-       (intros X; contradiction X) ..].
-      destruct y;
-      [intros X; contradiction X | intros X; contradiction X |
-       split; [apply IHx1; apply H | apply IHx2; apply H] |
-       (intros X; contradiction X) ..].
-      destruct y;
-      [intros X; contradiction X .. |
-       split; [apply IHx1; apply H | apply IHx2; apply H] |
-       intros X; contradiction X | intros X; contradiction X | intros X; contradiction X].
-      destruct y;
-      [intros X; contradiction X .. |
-       apply IHx; apply H |
-       intros X; contradiction X | intros X; contradiction X].
-      destruct y;
-      [intros X; contradiction X .. |
-       apply IHx; apply H |
-       intros X; contradiction X].
-      destruct y;
-      [intros X; contradiction X .. |
-       apply IHx; apply H].
+    intros x y; functional induction eq x y; try (intros; contradiction);
+    first
+    [ intros Heq; apply Atom.eq_sym; apply Heq
+    | intros [H1 H2]; split; [ apply IHP; apply H1 | apply IHP0; apply H2 ]
+    | intros H1; apply IHP; apply H1
+    ].
   Qed.
   Lemma eq_trans: forall x y z, eq x y -> eq y z -> eq x z. 
   Proof.
-   induction x.
-      destruct y;
-        [destruct z;
-          [apply Atom.eq_trans | intros X Y; contradiction Y ..]
-        | intros z X; contradiction X ..].
-      destruct y;
-      [ intros z X; contradiction X
-      | destruct z;
-        [ intros X Y; contradiction Y
-        | split;
-            [apply IHx1 with y1; [apply H | apply H0] |
-             apply IHx2 with y2; [apply H | apply H0]
-            ]
-        | intros X Y; contradiction Y ..
-        ]
-      | intros z X; contradiction X .. ].
-      destruct y;
-      [ intros z X; contradiction X
-      | intros z X; contradiction X
-      | destruct z;
-        [ intros X Y; contradiction Y
-        | intros X Y; contradiction Y
-        | split;
-            [apply IHx1 with y1; [apply H | apply H0] |
-             apply IHx2 with y2; [apply H | apply H0]
-            ]
-        | intros X Y; contradiction Y ..
-        ]
-      | intros z X; contradiction X .. ].
-      destruct y;
-      [ intros z X; contradiction X ..
-      | destruct z;
-        [ intros X Y; contradiction Y ..
-        | split;
-            [apply IHx1 with y1; [apply H | apply H0] |
-             apply IHx2 with y2; [apply H | apply H0]
-            ]
-        | intros X Y; contradiction Y
-        | intros X Y; contradiction Y
-        | intros X Y; contradiction Y
-        ]
-      | intros z X; contradiction X
-      | intros z X; contradiction X
-      | intros z X; contradiction X ].
-      destruct y;
-      [ intros z X; contradiction X ..
-      | destruct z;
-        [ intros X Y; contradiction Y ..
-        | intros; apply IHx with y; [apply H | apply H0]
-        | intros X Y; contradiction Y
-        | intros X Y; contradiction Y ]
-      | intros z X; contradiction X
-      | intros z X; contradiction X].
-      destruct y;
-      [ intros z X; contradiction X ..
-      | destruct z;
-        [ intros X Y; contradiction Y ..
-        | intros; apply IHx with y; [apply H | apply H0]
-        | intros X Y; contradiction Y ]
-      | intros z X; contradiction X].
-      destruct y;
-      [ intros z X; contradiction X ..
-      | destruct z;
-        [ intros X Y; contradiction Y ..
-        | intros; apply IHx with y; [apply H | apply H0]]
-      ].
+    intros x y; functional induction eq x y; try (intros; contradiction);
+    first
+    [ destruct z; try (intros; contradiction); intros XY YZ; apply Atom.eq_trans with y'; [ apply XY | apply YZ ]
+    | destruct z; try (intros; contradiction); intros XY YZ; split; [ apply IHP | apply IHP0 ]; first [ apply XY | apply YZ ]
+    | destruct z; try (intros; contradiction); intros XY YZ; apply IHP; [ apply XY | apply YZ ]
+    ].
   Qed.
   Instance eq_equiv: Equivalence eq := Build_Equivalence eq eq_refl eq_sym eq_trans.
 
   Lemma eq_dec: forall x y, { eq x y } + { ~ eq x y }.
   Proof.
-    induction x.
-      destruct y;
-      [ apply Atom.eq_dec
-      | right; auto ..
-      ].
-      destruct y;
-      [ right; auto
-      | elim (IHx1 y1);
-        [ elim (IHx2 y2);
-          [ left; split; [ apply a0 | apply a ]
-          | right; intro; apply b; apply H ]
-        | right; intro; apply b; apply H ]
-      | right; auto .. ].         
-      destruct y;
-      [ right; auto | right; auto
-      | elim (IHx1 y1);
-        [ elim (IHx2 y2);
-          [ left; split; [ apply a0 | apply a ]
-          | right; intro; apply b; apply H ]
-        | right; intro; apply b; apply H ]
-      | right; auto .. ].
-      destruct y;
-      [ right; auto | right; auto | right; auto
-      | elim (IHx1 y1);
-        [ elim (IHx2 y2);
-          [ left; split; [ apply a0 | apply a ]
-          | right; intro; apply b; apply H ]
-        | right; intro; apply b; apply H ]
-      | right; auto .. ].
-      destruct y;
-      [ right; auto ..
-      | elim (IHx y);
-        [ left; apply a
-        | right; auto
-        ]
-      | right; auto | right; auto ].
-      destruct y;
-      [ right; auto ..
-      | elim (IHx y);
-        [ left; apply a
-        | right; auto
-        ]
-      | right; auto ].
-      destruct y;
-      [ right; auto ..
-      | elim (IHx y);
-        [ left; apply a
-        | right; auto
-        ]
-      ].
+    intros x y; functional induction eq x y; try first [ intros; contradiction | auto ];
+    first
+    [ apply Atom.eq_dec 
+    | auto
+    ];
+    destruct IHP as [Heq1 | Hneq1]; destruct IHP0 as [Heq2 | Hneq2];
+    first
+    [ left; split; [ apply Heq1 | apply Heq2 ]
+    | right; intro H; first [ apply Hneq1 | apply Hneq2 ]; apply H
+    ].
   Qed.
 End Resource.
 
