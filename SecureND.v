@@ -4,25 +4,16 @@ Require Import Coq.Structures.Orders.
 Require Export MSets.
 Require Import Program.
 
-(* Repository type: lt is the dominance relationship *)
-Module Type REPOSITORY <: OrderedType.
+(* Repository type: *)
+Module Type REPOSITORY <: DecidableType.
   Parameter t: Type.
 
   Parameter eq: t -> t -> Prop.
-  Parameter lt: t -> t -> Prop. 
 
   Axiom eq_refl: forall x: t, eq x x.
   Axiom eq_sym: forall x y: t, eq x y -> eq y x.
   Axiom eq_trans: forall x y z: t, eq x y -> eq y z -> eq x z.
   Instance eq_equiv : Equivalence eq := Build_Equivalence eq eq_refl eq_sym eq_trans. 
-
-  Axiom lt_trans: forall x y z: t, lt x y -> lt y z -> lt x z.
-  Axiom lt_not_eq: forall x y: t, lt x y -> ~ eq x y.
-  Axiom lt_strorder: StrictOrder lt.
-  Axiom lt_compat : Proper (eq==>eq==>iff) lt.
- 
-  Parameter compare: t -> t -> comparison.
-  Parameter compare_spec : forall s s', CompSpec eq lt s s' (compare s s').
 
   Parameter eq_dec: forall x y, { eq x y } + { ~ eq x y }.
 End REPOSITORY.
@@ -54,7 +45,7 @@ Inductive Resource {A: Type} {S: Type}: Type :=
 | nd_trust: Resource -> Resource.
 
 (* Resources, with equality *)
-Module RESOURCE (R: REPOSITORY) (Atom: ATOM R) <: DecidableType.
+Module RESOURCE (R: REPOSITORY) (Atom: ATOM R) <: OrderedType.
 
   Definition t := @Resource Atom.t R.t.
   Function eq (x y: t): Prop :=
@@ -73,6 +64,7 @@ Module RESOURCE (R: REPOSITORY) (Atom: ATOM R) <: DecidableType.
   | nd_write x' => match y with nd_write y' => eq x' y' | _ => False end
   | nd_trust x' => match y with nd_trust y' => eq x' y' | _ => False end
   end.
+  Parameter lt: t -> t -> Prop.
 
   Lemma eq_refl: forall x, eq x x.
   Proof.
@@ -118,22 +110,22 @@ Module RESOURCE (R: REPOSITORY) (Atom: ATOM R) <: DecidableType.
     | right; intro H; first [ apply Hneq1 | apply Hneq2 ]; apply H
     ].
   Qed.
+
+  Axiom lt_trans: forall x y z: t, lt x y -> lt y z -> lt x z.
+  Axiom lt_not_eq: forall x y: t, lt x y -> ~ eq x y.
+  Axiom lt_strorder: StrictOrder lt.
+  Axiom lt_compat : Proper (eq==>eq==>iff) lt.
+ 
+  Parameter compare: t -> t -> comparison.
+  Parameter compare_spec : forall s s', CompSpec eq lt s s' (compare s s').
 End RESOURCE.
 
 (* A protocol is a list of resources *)
-(*Module Profile (R: REPOSITORY) (A: ATOM R).
-  Module E := Resource(R)(A).  
-  Include WSetsOn E.
-End Profile. *)
 
 (* Define two standard repositories Ra and Rb, s.t. Ra < Rb *)
 Declare Module Repository: REPOSITORY.
 Declare Module Atom: ATOM Repository.
 Module Resource := RESOURCE(Repository)(Atom).
-
-(* Module Export P := Profile(Repository)(Atom).
-Module Export PFacts := WFactsOn P.E P.
-Module Export PProps := WPropertiesOn P.E P. *)
 
 Axiom resource_eq: forall (a b: Resource.t), Resource.eq a b <-> a = b.
 
@@ -215,23 +207,18 @@ Proof.
   ].
 Qed.
 
-(*Lemma dec_and:
-  forall P Q, { P } + { ~P } -> { Q } + { ~Q } -> { P /\ Q } + { ~(P /\ Q) }.
-Proof.
-  intros P Q HP HQ. destruct HP as [ HP | HnotP ]. 
-    destruct HQ as [ HQ | HnotQ ].
-      left. split. exact HP. exact HQ.
-      right. intro. apply HnotQ. apply H.
-    right. intro. apply HnotP. apply H.
-Qed.
+(* lt order *)
+Definition repository_lt (R1: Repository.t) (R2: Repository.t): Prop :=
+  forall f1, typable R1 f1 -> forall f2, typable R2 f2 -> Resource.lt f1 f2.
 
-Lemma dec_not:
-  forall P, { P } + { ~P } -> { ~P } + { ~~P }.
-Proof.
-  intros P HP. destruct HP as [ HP | HnotP ].
-    right. intro. apply H. apply HP.
-    left. exact HnotP.
-Qed.*)
+Fixpoint is_valid (l: list Resource.t): Prop :=
+  match l with
+  | [] => True
+  | h::t => match t with
+    | [] => True
+    | h'::t' => Resource.lt h h' /\ is_valid t
+    end
+  end.
 
 (* wellformedness *)
 Definition well_formed (R: Repository.t) (P: list Resource.t): Prop :=
@@ -241,9 +228,10 @@ Add Morphism well_formed with signature Repository.eq ==> eq ==> Logic.iff as wf
   intros Ra Rb Req P; apply typable_profile_m; [ apply Req | reflexivity ].
 Qed.
 
+
 Section NDC_definition.
 Variable Ra: Repository.t.
-Variable Rb: { x | Repository.lt Ra x }.
+Variable Rb: { x | repository_lt Ra x }.
 
 Variable Pa: { x | typable_profile Ra x }.
 Variable Pb: { x | typable_profile (`Rb) x }.
@@ -254,8 +242,8 @@ Variable Pb: { x | typable_profile (`Rb) x }.
    The ND calculus
  *)
 Inductive NDProof: list Resource.t -> Resource.t -> Prop :=
-  | nd_atom_mess: forall b,
-      (* well_formed (`Pa) -> *) typable (`Rb) b ->
+  | nd_atom_mess: forall b, typable (`Rb) b -> 
+      well_formed Ra (`Pa) -> well_formed (`Rb) (`Pb) ->
       NDProof (`Pa ++ `Pb) b
   | nd_and_intro: forall f1 f2,
       NDProof (`Pa) f1 -> typable Ra f1 -> 
@@ -303,20 +291,35 @@ Inductive NDProof: list Resource.t -> Resource.t -> Prop :=
       typable (`Rb) f ->
       NDProof (`Pa) (nd_read f) ->
       NDProof (`Pa) (nd_trust f) ->
-      NDProof (`Pa) (nd_write f).
+      NDProof (`Pa) (nd_write f)
+  | nd_weakening: forall f1 f2,
+      typable Ra f1 -> typable (`Rb) f2 ->
+      NDProof (`Pa) (nd_write f1) ->
+      NDProof (`Pa) (nd_trust f2) ->
+      NDProof (`Pa ++ [f2]) (nd_write f1)
+  | nd_contraction: forall f g,
+      typable Ra f -> typable (`Rb) f -> typable Ra g ->
+      In f (`Pa) -> NDProof (`Pa ++ [f]) (nd_write f) ->
+      NDProof (`Pa) (nd_write f)
+  (* exchange rule not needed? *)
+  | nd_cut: forall f1 f2,
+      typable (`Rb) f1 -> typable (`Rb) f2 ->
+      NDProof (`Pa) f1 ->
+      In f1 (`Pb) -> NDProof (`Pb) f2 ->
+      NDProof (`Pa ++ `Pb) f2.
 
 Inductive NDDProof: list Resource.t -> Resource.t -> Prop :=
   | ndd_normal_proof: forall D f,
       NDProof D f -> NDDProof D f
-  | nd_bot: forall f1,
+  | ndd_bot: forall f1,
       typable Ra f1 ->
       NDDProof (`Pa) (nd_impl f1 nd_bottom) ->
       NDDProof (`Pa) (nd_not f1)
-  | nd_read_distrib: forall f1,
+  | ndd_read_distrib: forall f1,
       typable (`Rb) f1 ->
       NDDProof (`Pa) (nd_not (nd_read f1)) ->
       NDDProof (`Pa) (nd_read (nd_not f1))
-  | nd_write_distrib: forall f1,
+  | ndd_write_distrib: forall f1,
       typable (`Rb) f1 ->
       NDDProof (`Pa) (nd_not (nd_write f1)) ->
       NDDProof (`Pa) (nd_write (nd_not f1))
@@ -324,26 +327,26 @@ Inductive NDDProof: list Resource.t -> Resource.t -> Prop :=
       typable (`Rb) f1 ->
       NDDProof (`Pa) (nd_not (nd_trust f1)) ->
       NDDProof (`Pa) (nd_trust (nd_not f1))
-  | nd_dtrust_intro: forall f1,
+  | ndd_dtrust_intro: forall f1,
       typable (`Rb) f1 ->
       well_formed Ra (`Pa) -> NDDProof (`Pa) (nd_impl (nd_read f1) nd_bottom) ->
       NDDProof (`Pa) (nd_not (nd_trust f1))
-  | nd_dtrust_elim: forall f1 f2,
+  | ndd_dtrust_elim: forall f1 f2,
       typable (`Rb) f1 -> typable Ra f2 ->
       NDDProof (`Pa) (nd_not (nd_trust f1)) ->
       NDDProof (`Pa) (nd_impl (nd_not (nd_trust f1)) f2) ->
       NDDProof (`Pa) (nd_write f2)
-  | nd_mtrust_intro: forall f1 f2,
+  | ndd_mtrust_intro: forall f1 f2,
       typable Ra f1 -> typable (`Rb) f2 ->
       NDDProof (`Pa) (nd_impl (nd_read f2) nd_bottom) ->
       well_formed Ra (List.remove resource_eq_dec f1 (`Pa)) -> NDDProof [f1] (nd_impl (nd_read f2) nd_bottom) ->
       NDDProof (List.remove resource_eq_dec f1 (`Pa) ++ [f2]) (nd_not (nd_trust f1))
-  | nd_mtrust_elim1: forall Rc Pc f1 f2,
+ (* | nd_mtrust_elim1: forall Rc Pc f1 f2,
       Repository.lt Rc (`Rb) -> typable_profile Rc Pc -> typable Ra f1 -> typable (`Rb) f2 ->
       NDDProof (List.remove resource_eq_dec f1 (`Pa) ++ [f2]) (nd_not (nd_trust f1)) ->
       NDDProof (Pc) (nd_impl (nd_read f2) nd_bottom) ->
-      NDDProof (List.remove resource_eq_dec f1 (`Pa) ++ Pc) (nd_trust f2)
-  | nd_mtrust_elim2: forall (Rc: Repository.t | Repository.lt Rc (`Rb))
+      NDDProof (List.remove resource_eq_dec f1 (`Pa) ++ Pc) (nd_trust f2) *)
+  | ndd_mtrust_elim2: forall (Rc: Repository.t | repository_lt Rc (`Rb))
       (Pc: list Resource.t | typable_profile (`Rc) Pc) f1 f2,
       typable Ra f1 -> typable (`Rb) f2 ->
       NDDProof (List.remove resource_eq_dec f1 (`Pa) ++ [f2]) (nd_not (nd_trust f1)) ->
