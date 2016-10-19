@@ -242,9 +242,14 @@ Variable Pb: { x | typable_profile (`Rb) x }.
    The ND calculus
  *)
 Inductive NDProof: list Resource.t -> Resource.t -> Prop :=
+  (* operational rules *)
   | nd_atom_mess: forall b, typable (`Rb) b -> 
       well_formed Ra (`Pa) -> well_formed (`Rb) (`Pb) ->
       NDProof (`Pa ++ `Pb) b
+  | ndd_bot: forall f1,
+      typable Ra f1 ->
+      NDProof (`Pa) (nd_impl f1 nd_bottom) ->
+      NDProof (`Pa) (nd_not f1)
   | nd_and_intro: forall f1 f2,
       NDProof (`Pa) f1 -> typable Ra f1 -> 
       NDProof (`Pb) f2 -> typable (`Rb) f2 -> 
@@ -280,6 +285,19 @@ Inductive NDProof: list Resource.t -> Resource.t -> Prop :=
       NDProof (`Pa) (nd_impl f1 f2) ->
       NDProof (`Pa) f1 ->
       NDProof (`Pa ++ [f1]) f2
+  (* access rules *)
+  | nd_read_distrib: forall f1,
+      typable (`Rb) f1 ->
+      NDProof (`Pa) (nd_not (nd_read f1)) ->
+      NDProof (`Pa) (nd_read (nd_not f1))
+  | nd_write_distrib: forall f1,
+      typable (`Rb) f1 ->
+      NDProof (`Pa) (nd_not (nd_write f1)) ->
+      NDProof (`Pa) (nd_write (nd_not f1))
+  | nd_trust_distrib: forall f1,
+      typable (`Rb) f1 ->
+      NDProof (`Pa) (nd_not (nd_trust f1)) ->
+      NDProof (`Pa) (nd_trust (nd_not f1))
   | nd_read_intro: forall f,
       well_formed Ra (`Pa) -> typable (`Rb) f ->
       NDProof (`Pa) (nd_read f)
@@ -292,6 +310,31 @@ Inductive NDProof: list Resource.t -> Resource.t -> Prop :=
       NDProof (`Pa) (nd_read f) ->
       NDProof (`Pa) (nd_trust f) ->
       NDProof (`Pa) (nd_write f)
+  | nd_exec: forall f,
+       typable (`Rb) f ->
+      NDProof (`Pa) (nd_write f) ->
+      NDProof (`Pa) f
+  | nd_dtrust_intro: forall f1,
+      typable (`Rb) f1 ->
+      well_formed Ra (`Pa) -> NDProof (`Pa) (nd_impl (nd_read f1) nd_bottom) ->
+      NDProof (`Pa) (nd_not (nd_trust f1))
+  | nd_dtrust_elim: forall f1 f2,
+      typable (`Rb) f1 -> typable Ra f2 ->
+      NDProof (`Pa) (nd_not (nd_trust f1)) ->
+      NDProof (`Pa) (nd_impl (nd_not (nd_trust f1)) f2) ->
+      NDProof (`Pa) (nd_write f2)
+  | nd_mtrust_intro: forall f1 f2,
+      typable Ra f1 -> typable (`Rb) f2 ->
+      NDProof (`Pa) (nd_impl (nd_read f2) nd_bottom) ->
+      well_formed Ra (List.remove resource_eq_dec f1 (`Pa)) -> NDProof [f1] (nd_impl (nd_read f2) nd_bottom) ->
+      NDProof (List.remove resource_eq_dec f1 (`Pa) ++ [f2]) (nd_not (nd_trust f1))
+  | nd_mtrust_elim: forall (Rc: Repository.t | repository_lt Rc (`Rb))
+      (Pc: list Resource.t | typable_profile (`Rc) Pc) f1 f2,
+      typable Ra f1 -> typable (`Rb) f2 ->
+      NDProof (List.remove resource_eq_dec f1 (`Pa) ++ [f2]) (nd_not (nd_trust f1)) ->
+      well_formed (`Rb) (`Pc ++ [f2]) ->
+      NDProof (List.remove resource_eq_dec f1 (`Pa) ++ (`Pc)) (nd_trust f2)
+  (* structural rules *)
   | nd_weakening: forall f1 f2,
       typable Ra f1 -> typable (`Rb) f2 ->
       NDProof (`Pa) (nd_write f1) ->
@@ -307,51 +350,6 @@ Inductive NDProof: list Resource.t -> Resource.t -> Prop :=
       NDProof (`Pa) f1 ->
       In f1 (`Pb) -> NDProof (`Pb) f2 ->
       NDProof (`Pa ++ `Pb) f2.
-
-Inductive NDDProof: list Resource.t -> Resource.t -> Prop :=
-  | ndd_normal_proof: forall D f,
-      NDProof D f -> NDDProof D f
-  | ndd_bot: forall f1,
-      typable Ra f1 ->
-      NDDProof (`Pa) (nd_impl f1 nd_bottom) ->
-      NDDProof (`Pa) (nd_not f1)
-  | ndd_read_distrib: forall f1,
-      typable (`Rb) f1 ->
-      NDDProof (`Pa) (nd_not (nd_read f1)) ->
-      NDDProof (`Pa) (nd_read (nd_not f1))
-  | ndd_write_distrib: forall f1,
-      typable (`Rb) f1 ->
-      NDDProof (`Pa) (nd_not (nd_write f1)) ->
-      NDDProof (`Pa) (nd_write (nd_not f1))
-  | nd_trust_distrib: forall f1,
-      typable (`Rb) f1 ->
-      NDDProof (`Pa) (nd_not (nd_trust f1)) ->
-      NDDProof (`Pa) (nd_trust (nd_not f1))
-  | ndd_dtrust_intro: forall f1,
-      typable (`Rb) f1 ->
-      well_formed Ra (`Pa) -> NDDProof (`Pa) (nd_impl (nd_read f1) nd_bottom) ->
-      NDDProof (`Pa) (nd_not (nd_trust f1))
-  | ndd_dtrust_elim: forall f1 f2,
-      typable (`Rb) f1 -> typable Ra f2 ->
-      NDDProof (`Pa) (nd_not (nd_trust f1)) ->
-      NDDProof (`Pa) (nd_impl (nd_not (nd_trust f1)) f2) ->
-      NDDProof (`Pa) (nd_write f2)
-  | ndd_mtrust_intro: forall f1 f2,
-      typable Ra f1 -> typable (`Rb) f2 ->
-      NDDProof (`Pa) (nd_impl (nd_read f2) nd_bottom) ->
-      well_formed Ra (List.remove resource_eq_dec f1 (`Pa)) -> NDDProof [f1] (nd_impl (nd_read f2) nd_bottom) ->
-      NDDProof (List.remove resource_eq_dec f1 (`Pa) ++ [f2]) (nd_not (nd_trust f1))
- (* | nd_mtrust_elim1: forall Rc Pc f1 f2,
-      Repository.lt Rc (`Rb) -> typable_profile Rc Pc -> typable Ra f1 -> typable (`Rb) f2 ->
-      NDDProof (List.remove resource_eq_dec f1 (`Pa) ++ [f2]) (nd_not (nd_trust f1)) ->
-      NDDProof (Pc) (nd_impl (nd_read f2) nd_bottom) ->
-      NDDProof (List.remove resource_eq_dec f1 (`Pa) ++ Pc) (nd_trust f2) *)
-  | ndd_mtrust_elim2: forall (Rc: Repository.t | repository_lt Rc (`Rb))
-      (Pc: list Resource.t | typable_profile (`Rc) Pc) f1 f2,
-      typable Ra f1 -> typable (`Rb) f2 ->
-      NDDProof (List.remove resource_eq_dec f1 (`Pa) ++ [f2]) (nd_not (nd_trust f1)) ->
-      well_formed (`Rb) (`Pc ++ [f2]) ->
-      NDDProof (List.remove resource_eq_dec f1 (`Pa) ++ (`Pc)) (nd_trust f2).
 
 (*Axiom nd_import: forall f,
    NDProof (`Pa::nil) (nd_read f) ->
