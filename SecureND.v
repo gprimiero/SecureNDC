@@ -207,9 +207,28 @@ Proof.
   ].
 Qed.
 
+Axiom typable_and: forall R f1 f2, typable R f1 /\ typable R f2 -> typable R (nd_and f1 f2).
+
+Axiom typable_or: forall R f1 f2, typable R f1 \/ typable R f2 -> typable R (nd_or f1 f2).
+
+Axiom typable_impl: forall R f1 f2, (typable R f1 -> typable R f2) -> typable R (nd_impl f1 f2).
+
+(* this is due to the fact that ~f is equivalent to f -> bot, and bot is typable everywhere *)
+Axiom typable_not: forall R f, typable R (nd_not f).
+
+Axiom repository_not_empty: forall R: Repository.t, exists f, typable R f.
+
 (* lt order *)
 Definition repository_lt (R1: Repository.t) (R2: Repository.t): Prop :=
   forall f1, typable R1 f1 -> forall f2, typable R2 f2 -> Resource.lt f1 f2.
+
+Lemma repository_lt_trans: forall R1 R2 R3, repository_lt R1 R2 -> repository_lt R2 R3 -> repository_lt R1 R3.
+Proof.
+  intros R1 R2 R3 H12 H23 f1 Hf1 f3 Hf3; destruct (repository_not_empty R2) as [f2 Hf2]; transitivity f2;
+  [ apply H12; [ apply Hf1 | apply Hf2 ]
+  | apply H23; [ apply Hf2 | apply Hf3 ]
+  ].
+Qed.
 
 Fixpoint is_valid (l: list Resource.t): Prop :=
   match l with
@@ -230,126 +249,125 @@ Qed.
 
 
 Section NDC_definition.
-Variable Ra: Repository.t.
-Variable Rb: { x | repository_lt Ra x }.
-
-Variable Pa: { x | typable_profile Ra x }.
-Variable Pb: { x | typable_profile (`Rb) x }.
-
 (* ndproof:
    hypotheses |- message
    (i.e. NDProof P m is a proof of P |- m, where m is a message.)
    The ND calculus
  *)
+
 Inductive NDProof: list Resource.t -> Resource.t -> Prop :=
   (* operational rules *)
-  | nd_atom_mess: forall b, typable (`Rb) b -> 
-      well_formed Ra (`Pa) -> well_formed (`Rb) (`Pb) ->
-      NDProof (`Pa ++ `Pb) b
-  | ndd_bot: forall f1,
+  | nd_atom_mess: forall Ra Rb Pa Pb f, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
+      typable Rb f -> 
+      well_formed Ra Pa -> well_formed Rb Pb ->
+      NDProof (Pa ++ Pb) f
+  | nd_bot: forall Ra Pa f1, typable_profile Ra Pa ->
       typable Ra f1 ->
-      NDProof (`Pa) (nd_impl f1 nd_bottom) ->
-      NDProof (`Pa) (nd_not f1)
-  | nd_and_intro: forall f1 f2,
-      NDProof (`Pa) f1 -> typable Ra f1 -> 
-      NDProof (`Pb) f2 -> typable (`Rb) f2 -> 
-      NDProof (`Pa ++ `Pb) (nd_and f1 f2)
-  | nd_and_elim_l: forall f1 f2,
-      typable Ra f1 -> typable (`Rb) f2 -> 
-      NDProof (`Pa ++ `Pb) (nd_and f1 f2) ->
-      NDProof (`Pa ++ `Pb) f1
-  | nd_and_elim_r: forall f1 f2,
-      typable Ra f1 -> typable (`Rb) f2 -> 
-      NDProof (`Pa ++ `Pb) (nd_and f1 f2) ->
-      NDProof (`Pa ++ `Pb) f2
-  | nd_or_intro_l: forall f1 f2,
-      typable Ra f1 -> typable (`Rb) f2 -> 
-      NDProof (`Pa ++ `Pb) f1 ->
-      NDProof (`Pa ++ `Pb) (nd_or f1 f2)
-  | nd_or_intro_r: forall f1 f2,
-      typable Ra f1 -> typable (`Rb) f2 ->  
-      NDProof (`Pa ++ `Pb) f2 ->
-      NDProof (`Pa ++ `Pb) (nd_or f1 f2)
-  | nd_or_elim: forall f1 f2 f, 
-      typable Ra f1 -> typable (`Rb) f2 -> typable Ra f ->
-      NDProof (`Pa ++ `Pb) (nd_or f1 f2) ->
-      NDProof [f1] f ->
-      NDProof [f2] f ->
-      NDProof (`Pa ++ `Pb) f
-  | nd_impl_intro: forall f1 f2,
-      typable (`Rb) f1 -> typable (`Rb) f2 ->
-      NDProof (`Pa ++ [f1]) f2 ->
-      NDProof (`Pa) (nd_impl f1 f2)
-  | nd_impl_elim: forall f1 f2,
-      typable (`Rb) f1 -> typable (`Rb) f2 ->
-      NDProof (`Pa) (nd_impl f1 f2) ->
-      NDProof (`Pa) f1 ->
-      NDProof (`Pa ++ [f1]) f2
+      NDProof Pa (nd_impl f1 nd_bottom) ->
+      NDProof Pa (nd_not f1)
+  | nd_and_intro: forall Ra Rb Pa Pb f1 f2, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
+      typable Ra f1 -> typable Rb f2 ->
+      NDProof Pa f1 -> NDProof Pb f2 ->
+      NDProof (Pa ++ Pb) (nd_and f1 f2)
+  | nd_and_elim_l: forall Ra Rb Pa Pb f1 f2, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
+      typable Ra f1 -> typable Rb f2 -> 
+      NDProof (Pa ++ Pb) (nd_and f1 f2) ->
+      NDProof (Pa ++ Pb) f1
+  | nd_and_elim_r: forall Ra Rb Pa Pb f1 f2, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
+      typable Ra f1 -> typable Rb f2 ->
+      NDProof (Pa ++ Pb) (nd_and f1 f2) ->
+      NDProof (Pa ++ Pb) f2
+  | nd_or_intro_l: forall Ra Rb Pa Pb f1 f2, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
+      typable Ra f1 -> typable Rb f2 ->
+      NDProof (Pa ++ Pb) f1 ->
+      NDProof (Pa ++ Pb) (nd_or f1 f2)
+  | nd_or_intro_r: forall Ra Rb Pa Pb f1 f2, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
+      typable Ra f1 -> typable (Rb) f2 ->
+      NDProof (Pa ++ Pb) f2 ->
+      NDProof (Pa ++ Pb) (nd_or f1 f2)
+  | nd_or_elim: forall Ra Rb Rc Pa Pb f1 f2 g, typable_profile Ra Pa -> typable_profile Rb Pb ->
+      repository_lt Ra Rb ->
+      typable Ra f1 -> typable Rb f2 -> typable Rc g ->
+      NDProof (Pa ++ Pb) (nd_or f1 f2) ->
+      NDProof [f1] g ->
+      NDProof [f2] g ->
+      NDProof (Pa ++ Pb) g
+  | nd_impl_intro: forall Ra Rb Rc Pa f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
+      typable Rb f1 -> typable Rc f2 ->
+      NDProof (Pa ++ [f1]) f2 ->
+      NDProof Pa (nd_impl f1 f2)
+  | nd_impl_elim: forall Ra Rb Rc Pa  f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
+      typable Rb f1 -> typable Rc f2 ->
+      NDProof Pa (nd_impl f1 f2) ->
+      NDProof Pa f1 ->
+      NDProof (Pa ++ [f1]) f2
   (* access rules *)
-  | nd_read_distrib: forall f1,
-      typable (`Rb) f1 ->
-      NDProof (`Pa) (nd_not (nd_read f1)) ->
-      NDProof (`Pa) (nd_read (nd_not f1))
-  | nd_write_distrib: forall f1,
-      typable (`Rb) f1 ->
-      NDProof (`Pa) (nd_not (nd_write f1)) ->
-      NDProof (`Pa) (nd_write (nd_not f1))
-  | nd_trust_distrib: forall f1,
-      typable (`Rb) f1 ->
-      NDProof (`Pa) (nd_not (nd_trust f1)) ->
-      NDProof (`Pa) (nd_trust (nd_not f1))
-  | nd_read_intro: forall f,
-      well_formed Ra (`Pa) -> typable (`Rb) f ->
-      NDProof (`Pa) (nd_read f)
-  | nd_trust_intro: forall f,
-      NDProof (`Pa) (nd_read f) ->
-      well_formed Ra (`Pa ++ [f]) -> 
-      NDProof (`Pa) (nd_trust f)
-  | nd_write_intro: forall f,
-      typable (`Rb) f ->
-      NDProof (`Pa) (nd_read f) ->
-      NDProof (`Pa) (nd_trust f) ->
-      NDProof (`Pa) (nd_write f)
-  | nd_exec: forall f,
-       typable (`Rb) f ->
-      NDProof (`Pa) (nd_write f) ->
-      NDProof (`Pa) f
-  | nd_dtrust_intro: forall f1,
-      typable (`Rb) f1 ->
-      well_formed Ra (`Pa) -> NDProof (`Pa) (nd_impl (nd_read f1) nd_bottom) ->
-      NDProof (`Pa) (nd_not (nd_trust f1))
-  | nd_dtrust_elim: forall f1 f2,
-      typable (`Rb) f1 -> typable Ra f2 ->
-      NDProof (`Pa) (nd_not (nd_trust f1)) ->
-      NDProof (`Pa) (nd_impl (nd_not (nd_trust f1)) f2) ->
-      NDProof (`Pa) (nd_write f2)
-  | nd_mtrust_intro: forall f1 f2,
-      typable Ra f1 -> typable (`Rb) f2 ->
-      NDProof (`Pa) (nd_impl (nd_read f2) nd_bottom) ->
-      well_formed Ra (List.remove resource_eq_dec f1 (`Pa)) -> NDProof [f1] (nd_impl (nd_read f2) nd_bottom) ->
-      NDProof (List.remove resource_eq_dec f1 (`Pa) ++ [f2]) (nd_not (nd_trust f1))
-  | nd_mtrust_elim: forall (Rc: Repository.t | repository_lt Rc (`Rb))
-      (Pc: list Resource.t | typable_profile (`Rc) Pc) f1 f2,
-      typable Ra f1 -> typable (`Rb) f2 ->
-      NDProof (List.remove resource_eq_dec f1 (`Pa) ++ [f2]) (nd_not (nd_trust f1)) ->
-      well_formed (`Rb) (`Pc ++ [f2]) ->
-      NDProof (List.remove resource_eq_dec f1 (`Pa) ++ (`Pc)) (nd_trust f2)
+  | nd_read_distrib: forall Ra Rb Pa f1, typable_profile Ra Pa -> repository_lt Ra Rb ->
+      typable Rb f1 ->
+      NDProof Pa (nd_not (nd_read f1)) ->
+      NDProof Pa (nd_read (nd_not f1))
+  | nd_trust_distrib: forall Ra Rb Pa f1, typable_profile Ra Pa -> repository_lt Ra Rb ->
+      typable Rb f1 ->
+      NDProof Pa (nd_not (nd_trust f1)) ->
+      NDProof Pa (nd_trust (nd_not f1))
+  | nd_write_distrib: forall Ra Rb Pa f1, typable_profile Ra Pa -> repository_lt Ra Rb ->
+      typable Rb f1 ->
+      NDProof Pa (nd_not (nd_write f1)) ->
+      NDProof Pa (nd_write (nd_not f1))
+  | nd_read_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
+      well_formed Ra Pa -> typable Rb f ->
+      NDProof Pa (nd_read f)
+  | nd_trust_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
+      typable Rb f ->
+      NDProof Pa (nd_read f) ->
+      well_formed Ra (Pa ++ [f]) -> 
+      NDProof Pa (nd_trust f)
+  | nd_write_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
+      typable Rb f ->
+      NDProof Pa (nd_read f) ->
+      NDProof Pa (nd_trust f) ->
+      NDProof Pa (nd_write f)
+  | nd_exec: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
+      typable Rb f ->
+      NDProof Pa (nd_write f) ->
+      NDProof Pa f
+  | nd_dtrust_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
+      typable Rb f ->
+      well_formed Ra Pa -> NDProof Pa (nd_impl (nd_read f) nd_bottom) ->
+      NDProof Pa (nd_not (nd_trust f))
+  | nd_dtrust_elim: forall Ra Rb Rc Pa f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
+      typable Rb f1 -> typable Rc f2 ->
+      NDProof Pa (nd_not (nd_trust f1)) ->
+      NDProof Pa (nd_impl (nd_not (nd_trust f1)) f2) ->
+      NDProof Pa (nd_write f2)
+  | nd_mtrust_intro: forall Ra Rb Pa f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
+      typable Ra f1 -> typable Rb f2 ->
+      NDProof Pa (nd_impl (nd_read f2) nd_bottom) ->
+      well_formed Ra (List.remove resource_eq_dec f1 Pa) ->
+      NDProof [f1] (nd_impl (nd_read f2) nd_bottom) ->
+      NDProof (List.remove resource_eq_dec f1 Pa ++ [f2]) (nd_not (nd_trust f1))
+  | nd_mtrust_elim: forall Ra Rb Rc Pa Pc f1 f2, typable_profile Ra Pa -> typable_profile Rc Pc -> repository_lt Ra Rb -> repository_lt Rc Rb ->
+      typable Ra f1 -> typable Rb f2 ->
+      NDProof (List.remove resource_eq_dec f1 Pa ++ [f2]) (nd_not (nd_trust f1)) ->
+      well_formed Rb (Pc ++ [f2]) -> (* check? *)
+      NDProof (List.remove resource_eq_dec f1 Pa ++ Pc) (nd_trust f2)
   (* structural rules *)
-  | nd_weakening: forall f1 f2,
-      typable Ra f1 -> typable (`Rb) f2 ->
-      NDProof (`Pa) (nd_write f1) ->
-      NDProof (`Pa) (nd_trust f2) ->
-      NDProof (`Pa ++ [f2]) (nd_write f1)
-  | nd_contraction: forall f g,
-      typable Ra f -> typable (`Rb) f -> typable Ra g ->
-      In f (`Pa) -> NDProof (`Pa ++ [f]) (nd_write f) ->
-      NDProof (`Pa) (nd_write f)
+  | nd_weakening: forall Ra Rb Pa f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
+      typable Ra f1 -> typable Rb f2 ->
+      NDProof Pa (nd_write f1) ->
+      NDProof Pa (nd_trust f2) ->
+      NDProof (Pa ++ [f2]) (nd_write f1)
+  | nd_contraction: forall Ra Rb Pa f g, typable_profile Ra Pa -> repository_lt Ra Rb ->
+      typable Ra f -> typable Rb f -> typable Ra g ->
+      In f Pa -> NDProof (Pa ++ [f]) (nd_write f) ->
+      NDProof Pa (nd_write f)
   (* exchange rule not needed? *)
-  | nd_cut: forall f1 f2,
-      typable (`Rb) f1 -> typable (`Rb) f2 ->
-      NDProof (`Pa) f1 ->
-      In f1 (`Pb) -> NDProof (`Pb) f2 ->
-      NDProof (`Pa ++ `Pb) f2.
+  | nd_cut: forall Ra Rb Pa Pb f1 f2, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
+      typable Rb f1 -> typable Rb f2 ->
+      NDProof Pa f1 ->
+      In f1 Pb -> NDProof (Pb) f2 ->
+      NDProof (Pa ++ Pb) f2.
+
 
 (*Axiom nd_import: forall f,
    NDProof (`Pa::nil) (nd_read f) ->
@@ -357,17 +375,17 @@ Inductive NDProof: list Resource.t -> Resource.t -> Prop :=
    typable_profile Ra (P.add f (`Pa)).*)
 
 (* Properties of dominance *)
-Axiom typable_1_read: forall f,
-  typable Ra f -> NDProof (`Pa) (nd_read f).
-Axiom typable_1_write: forall f,
-  typable Ra f -> NDProof (`Pa) (nd_write f).
-Axiom typable_2_read: forall f,
-  typable (`Rb) f -> NDProof (`Pa) (nd_read f).
-Axiom typable_3_write: forall f,
-  typable (`Rb) f ->
-  (NDProof (`Pa) (nd_write f) <->
-     NDProof (`Pa) (nd_read f) /\
-     NDProof (`Pa) (nd_trust f)).
+Axiom typable_1_read: forall Ra Pa f, typable_profile Ra Pa ->
+  typable Ra f -> NDProof Pa (nd_read f).
+Axiom typable_1_write: forall Ra Pa f, typable_profile Ra Pa ->
+  typable Ra f -> NDProof Pa (nd_write f).
+Axiom typable_2_read: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
+  typable Rb f -> NDProof Pa (nd_read f).
+Axiom typable_3_write: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
+  typable Rb f ->
+  (NDProof Pa (nd_write f) <->
+     NDProof Pa (nd_read f) /\
+     NDProof Pa (nd_trust f)).
 
 (*Axiom proof_in: forall P x,
   NDProof (P::nil) x <-> In x P.
