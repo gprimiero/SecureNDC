@@ -239,15 +239,6 @@ Fixpoint is_valid (l: list Resource.t): Prop :=
     end
   end.
 
-(* wellformedness *)
-Definition well_formed (R: Repository.t) (P: list Resource.t): Prop :=
-  typable_profile R P.
-
-Add Morphism well_formed with signature Repository.eq ==> eq ==> Logic.iff as wf_m.
-  intros Ra Rb Req P; apply typable_profile_m; [ apply Req | reflexivity ].
-Qed.
-
-
 Section NDC_definition.
 (* ndproof:
    hypotheses |- message
@@ -258,9 +249,7 @@ Section NDC_definition.
 Inductive NDProof: list Resource.t -> Resource.t -> Prop :=
   (* operational rules *)
   | nd_atom_mess: forall Ra Rb Pa Pb f, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
-      typable Rb f -> 
-      well_formed Ra Pa -> well_formed Rb Pb ->
-      NDProof (Pa ++ Pb) f
+      typable Rb f -> NDProof (Pa ++ Pb) f
   | nd_bot: forall Ra Pa f1, typable_profile Ra Pa ->
       typable Ra f1 ->
       NDProof Pa (nd_impl f1 nd_bottom) ->
@@ -315,8 +304,7 @@ Inductive NDProof: list Resource.t -> Resource.t -> Prop :=
       NDProof Pa (nd_not (nd_write f1)) ->
       NDProof Pa (nd_write (nd_not f1))
   | nd_read_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
-      well_formed Ra Pa -> typable Rb f ->
-      NDProof Pa (nd_read f)
+      typable Rb f -> NDProof Pa (nd_read f)
   | nd_trust_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f ->
       NDProof Pa (nd_read f) ->
