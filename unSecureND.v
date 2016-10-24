@@ -308,7 +308,6 @@ Inductive NDProof: list Resource.t -> Resource.t -> Prop :=
   | nd_trust_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f ->
       NDProof Pa (nd_read f) ->
-      well_formed Ra (Pa ++ [f]) -> 
       NDProof Pa (nd_trust f)
   | nd_write_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f ->
@@ -321,7 +320,7 @@ Inductive NDProof: list Resource.t -> Resource.t -> Prop :=
       NDProof Pa f
   | nd_dtrust_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f ->
-      well_formed Ra Pa -> NDProof Pa (nd_impl (nd_read f) nd_bottom) ->
+      NDProof Pa (nd_impl (nd_read f) nd_bottom) ->
       NDProof Pa (nd_not (nd_trust f))
   | nd_dtrust_elim: forall Ra Rb Rc Pa f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f1 -> typable Rc f2 ->
@@ -331,13 +330,11 @@ Inductive NDProof: list Resource.t -> Resource.t -> Prop :=
   | nd_mtrust_intro: forall Ra Rb Pa f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Ra f1 -> typable Rb f2 ->
       NDProof Pa (nd_impl (nd_read f2) nd_bottom) ->
-      well_formed Ra (List.remove resource_eq_dec f1 Pa) ->
       NDProof [f1] (nd_impl (nd_read f2) nd_bottom) ->
       NDProof (List.remove resource_eq_dec f1 Pa ++ [f2]) (nd_not (nd_trust f1))
   | nd_mtrust_elim: forall Ra Rb Rc Pa Pc f1 f2, typable_profile Ra Pa -> typable_profile Rc Pc -> repository_lt Ra Rb -> repository_lt Rc Rb ->
       typable Ra f1 -> typable Rb f2 ->
       NDProof (List.remove resource_eq_dec f1 Pa ++ [f2]) (nd_not (nd_trust f1)) ->
-      well_formed Rb (Pc ++ [f2]) -> (* check? *)
       NDProof (List.remove resource_eq_dec f1 Pa ++ Pc) (nd_trust f2)
   (* structural rules *)
   | nd_weakening: forall Ra Rb Pa f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
