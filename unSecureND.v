@@ -191,6 +191,18 @@ Proof.
   ].
 Qed.
 
+Lemma is_valid_elide:
+  forall h h' t, is_valid (h::h'::t) -> is_valid (h::t).
+Proof.
+  intros h h' t H; induction t;
+  [ simpl; auto
+  | split;
+    [ transitivity h'; [ apply (proj1 H) | apply (proj1 (proj2 H)) ]
+    | apply is_valid_tail with h'; apply is_valid_tail with h; apply H
+    ]
+  ].
+Qed.
+
 Record profile := mkProfile
   { ordered: list Resource.t; 
     separate: ResourceSet.t;
@@ -258,6 +270,15 @@ Proof.
   ].
 Qed.
 
+Theorem remove_In_head: forall (A: Type) (eq_dec: forall x y: A, {x = y} + {x <> y})
+  (h: A) (t: list A) (x: A), h <> x -> remove eq_dec x (h::t) = h::remove eq_dec x t.
+Proof.
+  intros A eq_dec h t x Heq; unfold remove; destruct (eq_dec x h);
+  [ absurd (h = x); [ apply Heq | symmetry; apply e ]
+  | reflexivity
+  ].
+Qed.
+
 Program Definition profile_remove (f: Resource.t) (P: profile): profile :=
   mkProfile (List.remove resource_eq_dec f (ordered P)) (ResourceSet.remove f (separate P)) _.
 Obligation 1 .
@@ -265,11 +286,12 @@ Obligation 1 .
   [ simpl; destruct (resource_eq_dec f h); try auto
   | simpl; destruct (resource_eq_dec f h); destruct (resource_eq_dec f h');
     [ absurd (Resource.eq h h'); [ apply Resource.lt_not_eq; apply (proj1 Ho) | rewrite <- e; rewrite <- e0; reflexivity ]
-    | rewrite remove_In_eq; [ apply (proj2 Ho) | ]
-    |
-    |
+    | rewrite remove_In_eq; [ apply (proj2 Ho) | intros ABS; apply (is_valid_cons f (h'::t')); [ rewrite e; apply Ho | right; apply ABS ] ]
+    | rewrite remove_In_eq; [ apply is_valid_elide with h'; apply Ho | apply is_valid_cons; rewrite e; apply (proj2 Ho) ]
+    | split; [ apply (proj1 Ho) | rewrite remove_In_head in IHP; [ apply IHP; apply (proj2 Ho) | apply sym_not_eq; apply n0 ] ]
     ]
   ].
+Qed.
 
 Section NDC_definition.
 (* ndproof:
