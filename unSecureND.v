@@ -139,75 +139,6 @@ Proof.
   ].
 Qed.
 
-Fixpoint profile_eq (Pa: list ResourceSet.t) (Pb: list ResourceSet.t): Prop :=
-  match Pa, Pb with
-  | nil, nil => True
-  | ha::ta, hb::tb => ResourceSet.eq ha hb /\ profile_eq ta tb
-  | _, _ => False
-  end.
-
-Instance profile_eq_equiv: Equivalence profile_eq.
-Proof.
-  split;
-  [ intros P; induction P; 
-    [ simpl; trivial
-    | split; [ reflexivity | apply IHP ]
-    ]
-  | intros Pa; induction Pa; intros Pb; destruct Pb; intros H; try (simpl; trivial); split;
-    [ symmetry; apply (proj1 H)
-    | apply IHPa; apply (proj2 H)
-    ]
-  | intros Pa; induction Pa; intros Pb; destruct Pb; intros Pc; destruct Pc; try (simpl; trivial); try contradiction;
-    intros Hab Hbc; split;
-    [ transitivity t; [ apply (proj1 Hab) | apply (proj1 Hbc) ]
-    | apply IHPa with Pb; [ apply (proj2 Hab) | apply (proj2 Hbc) ]
-    ]
-  ].
-Qed.
-
-Fixpoint contains (s: ResourceSet.t) (P: list ResourceSet.t): Prop :=
-  match P with
-  | nil => False
-  | h::t => ResourceSet.eq h s \/ contains s t
-  end.
-
-Add Morphism contains with signature ResourceSet.eq ==> profile_eq ==> iff as contains_m.
-Proof.
-  intros s1 s2 Hseq. double induction x0 y0; try contradiction;
-  [ intros _; simpl; split; contradiction
-  | intros; split; intros [Hx | Hx];
-    [ left; transitivity a0; [ symmetry; apply (proj1 H1) | transitivity s1; [ apply Hx | apply Hseq ] ]
-    | right; apply H0; [ apply (proj2 H1) | apply Hx ]
-    | left; transitivity a; [ apply (proj1 H1) | transitivity s2; [ apply Hx | symmetry; apply Hseq ] ]
-    | right; apply <- H0; [ apply Hx | apply (proj2 H1) ]
-    ]
-  ].
-Qed.
-
-Definition profile_in (f: Resource.t) (P: list ResourceSet.t): Prop :=
-  exists s, ResourceSet.In f s /\ contains s P.
-
-Lemma profile_in_eq: forall f Pa Pb, profile_in f Pa -> profile_eq Pa Pb -> profile_in f Pb.
-Proof.
-  intros f Pa; induction Pa; destruct Pb; try contradiction;
-  [ intros H1 _; apply H1
-  | intros Ha Heq; destruct Ha as [s [Hs1 Hs2]]; destruct Hs2 as [Hf_eq | Hf_in];
-    [ exists s; split;
-      [ apply Hs1
-      | left; transitivity a; [ symmetry; apply (proj1 Heq) | apply Hf_eq ]
-      ]
-    | destruct (IHPa Pb);
-      [ exists s; split; [ apply Hs1 | apply Hf_in]
-      | apply (proj2 Heq)
-      | exists x; split;
-        [ apply (proj1 H)
-        | right; apply (proj2 H)
-        ]
-      ]
-    ]
-  ].
-Qed.
-
 (* typability (of a profile and a message is defined by its properties. *)
 Parameter typable: Repository.t -> Resource.t -> Prop.
 Parameter typable_eq: forall Ra Rb f1 f2,
@@ -222,52 +153,10 @@ Proof.
   ].
 Qed.
 
-(* a profile is typable if all its messages are typable *)
-Definition typable_profile (R: Repository.t) (P: list ResourceSet.t): Prop :=
-  forall s, contains s P -> forall f, ResourceSet.In f s -> typable R f.
-
-Lemma typable_sublist: forall R f P, typable_profile R (f::P) -> typable_profile R P.
-Proof.
-  intros R f P Htyp x Hin; apply Htyp; right; apply Hin.
-Qed.
-
-Add Morphism typable_profile with signature Repository.eq ==> profile_eq ==> Logic.iff as typable_profile_m.
-Proof.
-  intros Ra Rb Hreq Pa Pb Heq; destruct Pa as [ | a Pa]; destruct Pb as [ | b Pb]; try contradiction;
-  [ split; intros f R Hf; contradiction
-  | split; destruct Heq as [Eq_ab Eq_PaPb]; intros Htyp s [ Hseq | Hsin ] f Hfin;
-    [ rewrite <- Hreq; rewrite <- Hseq in Hfin; apply Htyp with a;
-      [ left; reflexivity | apply Eq_ab; apply Hfin ]
-    | rewrite <- Hreq; apply Htyp with s; [ right; rewrite Eq_PaPb; apply Hsin | apply Hfin ]
-    | rewrite Hreq; rewrite <- Hseq in Hfin; apply Htyp with a;
-      [ left; symmetry; apply Eq_ab | apply Hfin ]
-    | rewrite Hreq; apply Htyp with s; [ right; rewrite <- Eq_PaPb; apply Hsin | apply Hfin ]
-    ]
-  ].
-Qed.
-
-Axiom typable_and: forall R f1 f2, typable R f1 /\ typable R f2 -> typable R (nd_and f1 f2).
-
-Axiom typable_or: forall R f1 f2, typable R f1 \/ typable R f2 -> typable R (nd_or f1 f2).
-
-Axiom typable_impl: forall R f1 f2, (typable R f1 -> typable R f2) -> typable R (nd_impl f1 f2).
-
-(* this is due to the fact that ~f is equivalent to f -> bot, and bot is typable everywhere *)
-Axiom typable_not: forall R f, typable R (nd_not f).
-Axiom repository_not_empty: forall R: Repository.t, exists f, typable R f.
-
 (* lt order *)
 Definition repository_lt (R1: Repository.t) (R2: Repository.t): Prop :=
   (exists f1, typable R1 f1 /\ exists f2, typable R2 f2 /\ Resource.lt f1 f2) /\
   ~(exists f1, typable R1 f1 /\ exists f2, typable R2 f2 /\ Resource.lt f2 f1).
-
-(*Lemma repository_lt_trans: forall R1 R2 R3, repository_lt R1 R2 -> repository_lt R2 R3 -> repository_lt R1 R3.
-Proof.
-  intros R1 R2 R3 [[f1 [Hf1 [f2 [Hf2 Hlt]]]] H12] [[f2' [Hf2' [f3 [Hf3 Hlt']]]] H']; split.
-    exists f1; split.
-      exact Hf1.
-      
-Qed.*)
 
 Function is_valid (l: list Resource.t): Prop :=
   match l with
@@ -307,7 +196,53 @@ Record profile := mkProfile
     separate: ResourceSet.t;
     validity: is_valid ordered   
   }.
-  
+
+Definition profile_eq (Pa: profile) (Pb: profile): Prop :=
+  eqlistA Resource.eq (ordered Pa) (ordered Pb) /\
+  ResourceSet.eq (separate Pa) (separate Pb).
+
+Instance profile_eq_equiv: Equivalence profile_eq.
+Proof.
+  split;
+  [ intros Pa; split; reflexivity
+  | intros Pa Pb Hab; split; symmetry; apply Hab
+  | intros Pa Pb Pc Hab Hac; split; [ transitivity (ordered Pb) | transitivity (separate Pb) ];
+    apply Hab || apply Hac
+  ].
+Qed.
+
+Definition profile_in (f: Resource.t) (P: profile): Prop :=
+  InA Resource.eq f (ordered P) \/ ResourceSet.In f (separate P).
+
+Lemma profile_in_eq: forall f Pa Pb, profile_in f Pa -> profile_eq Pa Pb -> profile_in f Pb.
+Proof.
+  intros f Pa Pb [Hin_ord | Hin_sep] [Heq_ord Heq_sep];
+  [ left; rewrite <- Heq_ord; apply Hin_ord
+  | right; rewrite <- Heq_sep; apply Hin_sep
+  ].
+Qed.
+
+(* a profile is typable if all its messages are typable *)
+Definition typable_profile (R: Repository.t) (P: profile): Prop :=
+  forall f, profile_in f P -> typable R f.
+
+Add Morphism typable_profile with signature Repository.eq ==> profile_eq ==> Logic.iff as typable_profile_m.
+Proof.
+  intros Ra Rb Hreq Pa Pb Heq; split; intros Htyp f H;
+  [ rewrite <- Hreq; apply Htyp; apply profile_in_eq with Pb; [ apply H | symmetry; apply Heq ]
+  | rewrite Hreq; apply Htyp; apply profile_in_eq with Pa; [ apply H | apply Heq ]
+  ].
+Qed.
+
+Axiom typable_and: forall R f1 f2, typable R f1 /\ typable R f2 -> typable R (nd_and f1 f2).
+
+Axiom typable_or: forall R f1 f2, typable R f1 \/ typable R f2 -> typable R (nd_or f1 f2).
+
+Axiom typable_impl: forall R f1 f2, (typable R f1 -> typable R f2) -> typable R (nd_impl f1 f2).
+
+(* this is due to the fact that ~f is equivalent to f -> bot, and bot is typable everywhere *)
+Axiom typable_not: forall R f, typable R (nd_not f).
+
 Theorem remove_In_eq: forall (A: Type) (eq_dec: forall x y: A, {x = y} + {x <> y})
   (l: list A) (x: A), ~In x l -> remove eq_dec x l = l.
 Proof.
@@ -335,7 +270,6 @@ Obligation 1 .
     |
     ]
   ].
-    
 
 Section NDC_definition.
 (* ndproof:
