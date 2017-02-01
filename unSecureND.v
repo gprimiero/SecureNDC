@@ -139,75 +139,6 @@ Proof.
   ].
 Qed.
 
-Fixpoint profile_eq (Pa: list ResourceSet.t) (Pb: list ResourceSet.t): Prop :=
-  match Pa, Pb with
-  | nil, nil => True
-  | ha::ta, hb::tb => ResourceSet.eq ha hb /\ profile_eq ta tb
-  | _, _ => False
-  end.
-
-Instance profile_eq_equiv: Equivalence profile_eq.
-Proof.
-  split;
-  [ intros P; induction P; 
-    [ simpl; trivial
-    | split; [ reflexivity | apply IHP ]
-    ]
-  | intros Pa; induction Pa; intros Pb; destruct Pb; intros H; try (simpl; trivial); split;
-    [ symmetry; apply (proj1 H)
-    | apply IHPa; apply (proj2 H)
-    ]
-  | intros Pa; induction Pa; intros Pb; destruct Pb; intros Pc; destruct Pc; try (simpl; trivial); try contradiction;
-    intros Hab Hbc; split;
-    [ transitivity t; [ apply (proj1 Hab) | apply (proj1 Hbc) ]
-    | apply IHPa with Pb; [ apply (proj2 Hab) | apply (proj2 Hbc) ]
-    ]
-  ].
-Qed.
-
-Fixpoint contains (s: ResourceSet.t) (P: list ResourceSet.t): Prop :=
-  match P with
-  | nil => False
-  | h::t => ResourceSet.eq h s \/ contains s t
-  end.
-
-Add Morphism contains with signature ResourceSet.eq ==> profile_eq ==> iff as contains_m.
-Proof.
-  intros s1 s2 Hseq. double induction x0 y0; try contradiction;
-  [ intros _; simpl; split; contradiction
-  | intros; split; intros [Hx | Hx];
-    [ left; transitivity a0; [ symmetry; apply (proj1 H1) | transitivity s1; [ apply Hx | apply Hseq ] ]
-    | right; apply H0; [ apply (proj2 H1) | apply Hx ]
-    | left; transitivity a; [ apply (proj1 H1) | transitivity s2; [ apply Hx | symmetry; apply Hseq ] ]
-    | right; apply <- H0; [ apply Hx | apply (proj2 H1) ]
-    ]
-  ].
-Qed.
-
-Definition profile_in (f: Resource.t) (P: list ResourceSet.t): Prop :=
-  exists s, ResourceSet.In f s /\ contains s P.
-
-Lemma profile_in_eq: forall f Pa Pb, profile_in f Pa -> profile_eq Pa Pb -> profile_in f Pb.
-Proof.
-  intros f Pa; induction Pa; destruct Pb; try contradiction;
-  [ intros H1 _; apply H1
-  | intros Ha Heq; destruct Ha as [s [Hs1 Hs2]]; destruct Hs2 as [Hf_eq | Hf_in];
-    [ exists s; split;
-      [ apply Hs1
-      | left; transitivity a; [ symmetry; apply (proj1 Heq) | apply Hf_eq ]
-      ]
-    | destruct (IHPa Pb);
-      [ exists s; split; [ apply Hs1 | apply Hf_in]
-      | apply (proj2 Heq)
-      | exists x; split;
-        [ apply (proj1 H)
-        | right; apply (proj2 H)
-        ]
-      ]
-    ]
-  ].
-Qed.
-
 (* typability (of a profile and a message is defined by its properties. *)
 Parameter typable: Repository.t -> Resource.t -> Prop.
 Parameter typable_eq: forall Ra Rb f1 f2,
@@ -222,52 +153,10 @@ Proof.
   ].
 Qed.
 
-(* a profile is typable if all its messages are typable *)
-Definition typable_profile (R: Repository.t) (P: list ResourceSet.t): Prop :=
-  forall s, contains s P -> forall f, ResourceSet.In f s -> typable R f.
-
-Lemma typable_sublist: forall R f P, typable_profile R (f::P) -> typable_profile R P.
-Proof.
-  intros R f P Htyp x Hin; apply Htyp; right; apply Hin.
-Qed.
-
-Add Morphism typable_profile with signature Repository.eq ==> profile_eq ==> Logic.iff as typable_profile_m.
-Proof.
-  intros Ra Rb Hreq Pa Pb Heq; destruct Pa as [ | a Pa]; destruct Pb as [ | b Pb]; try contradiction;
-  [ split; intros f R Hf; contradiction
-  | split; destruct Heq as [Eq_ab Eq_PaPb]; intros Htyp s [ Hseq | Hsin ] f Hfin;
-    [ rewrite <- Hreq; rewrite <- Hseq in Hfin; apply Htyp with a;
-      [ left; reflexivity | apply Eq_ab; apply Hfin ]
-    | rewrite <- Hreq; apply Htyp with s; [ right; rewrite Eq_PaPb; apply Hsin | apply Hfin ]
-    | rewrite Hreq; rewrite <- Hseq in Hfin; apply Htyp with a;
-      [ left; symmetry; apply Eq_ab | apply Hfin ]
-    | rewrite Hreq; apply Htyp with s; [ right; rewrite <- Eq_PaPb; apply Hsin | apply Hfin ]
-    ]
-  ].
-Qed.
-
-Axiom typable_and: forall R f1 f2, typable R f1 /\ typable R f2 -> typable R (nd_and f1 f2).
-
-Axiom typable_or: forall R f1 f2, typable R f1 \/ typable R f2 -> typable R (nd_or f1 f2).
-
-Axiom typable_impl: forall R f1 f2, (typable R f1 -> typable R f2) -> typable R (nd_impl f1 f2).
-
-(* this is due to the fact that ~f is equivalent to f -> bot, and bot is typable everywhere *)
-Axiom typable_not: forall R f, typable R (nd_not f).
-Axiom repository_not_empty: forall R: Repository.t, exists f, typable R f.
-
 (* lt order *)
 Definition repository_lt (R1: Repository.t) (R2: Repository.t): Prop :=
   (exists f1, typable R1 f1 /\ exists f2, typable R2 f2 /\ Resource.lt f1 f2) /\
   ~(exists f1, typable R1 f1 /\ exists f2, typable R2 f2 /\ Resource.lt f2 f1).
-
-(*Lemma repository_lt_trans: forall R1 R2 R3, repository_lt R1 R2 -> repository_lt R2 R3 -> repository_lt R1 R3.
-Proof.
-  intros R1 R2 R3 [[f1 [Hf1 [f2 [Hf2 Hlt]]]] H12] [[f2' [Hf2' [f3 [Hf3 Hlt']]]] H']; split.
-    exists f1; split.
-      exact Hf1.
-      
-Qed.*)
 
 Function is_valid (l: list Resource.t): Prop :=
   match l with
@@ -302,12 +191,71 @@ Proof.
   ].
 Qed.
 
+Lemma is_valid_elide:
+  forall h h' t, is_valid (h::h'::t) -> is_valid (h::t).
+Proof.
+  intros h h' t H; induction t;
+  [ simpl; auto
+  | split;
+    [ transitivity h'; [ apply (proj1 H) | apply (proj1 (proj2 H)) ]
+    | apply is_valid_tail with h'; apply is_valid_tail with h; apply H
+    ]
+  ].
+Qed.
+
 Record profile := mkProfile
   { ordered: list Resource.t; 
     separate: ResourceSet.t;
     validity: is_valid ordered   
   }.
-  
+
+(* XXX is this the right profile equality? *)
+Definition profile_eq (Pa: profile) (Pb: profile): Prop :=
+  eqlistA Resource.eq (ordered Pa) (ordered Pb) /\
+  ResourceSet.eq (separate Pa) (separate Pb).
+
+Instance profile_eq_equiv: Equivalence profile_eq.
+Proof.
+  split;
+  [ intros Pa; split; reflexivity
+  | intros Pa Pb Hab; split; symmetry; apply Hab
+  | intros Pa Pb Pc Hab Hac; split; [ transitivity (ordered Pb) | transitivity (separate Pb) ];
+    apply Hab || apply Hac
+  ].
+Qed.
+
+Definition profile_in (f: Resource.t) (P: profile): Prop :=
+  InA Resource.eq f (ordered P) \/ ResourceSet.In f (separate P).
+
+Lemma profile_in_eq: forall f Pa Pb, profile_in f Pa -> profile_eq Pa Pb -> profile_in f Pb.
+Proof.
+  intros f Pa Pb [Hin_ord | Hin_sep] [Heq_ord Heq_sep];
+  [ left; rewrite <- Heq_ord; apply Hin_ord
+  | right; rewrite <- Heq_sep; apply Hin_sep
+  ].
+Qed.
+
+(* a profile is typable if all its messages are typable *)
+Definition typable_profile (R: Repository.t) (P: profile): Prop :=
+  forall f, profile_in f P -> typable R f.
+
+Add Morphism typable_profile with signature Repository.eq ==> profile_eq ==> Logic.iff as typable_profile_m.
+Proof.
+  intros Ra Rb Hreq Pa Pb Heq; split; intros Htyp f H;
+  [ rewrite <- Hreq; apply Htyp; apply profile_in_eq with Pb; [ apply H | symmetry; apply Heq ]
+  | rewrite Hreq; apply Htyp; apply profile_in_eq with Pa; [ apply H | apply Heq ]
+  ].
+Qed.
+
+Axiom typable_and: forall R f1 f2, typable R f1 /\ typable R f2 -> typable R (nd_and f1 f2).
+
+Axiom typable_or: forall R f1 f2, typable R f1 \/ typable R f2 -> typable R (nd_or f1 f2).
+
+Axiom typable_impl: forall R f1 f2, (typable R f1 -> typable R f2) -> typable R (nd_impl f1 f2).
+
+(* this is due to the fact that ~f is equivalent to f -> bot, and bot is typable everywhere *)
+Axiom typable_not: forall R f, typable R (nd_not f).
+
 Theorem remove_In_eq: forall (A: Type) (eq_dec: forall x y: A, {x = y} + {x <> y})
   (l: list A) (x: A), ~In x l -> remove eq_dec x l = l.
 Proof.
@@ -323,19 +271,35 @@ Proof.
   ].
 Qed.
 
+Theorem remove_In_head: forall (A: Type) (eq_dec: forall x y: A, {x = y} + {x <> y})
+  (h: A) (t: list A) (x: A), h <> x -> remove eq_dec x (h::t) = h::remove eq_dec x t.
+Proof.
+  intros A eq_dec h t x Heq; unfold remove; destruct (eq_dec x h);
+  [ absurd (h = x); [ apply Heq | symmetry; apply e ]
+  | reflexivity
+  ].
+Qed.
+
 Program Definition profile_remove (f: Resource.t) (P: profile): profile :=
   mkProfile (List.remove resource_eq_dec f (ordered P)) (ResourceSet.remove f (separate P)) _.
-Obligation 1 .
+Obligation 1.
   destruct P as [o s Ho]; simpl; functional induction (is_valid o); try auto;
   [ simpl; destruct (resource_eq_dec f h); try auto
   | simpl; destruct (resource_eq_dec f h); destruct (resource_eq_dec f h');
     [ absurd (Resource.eq h h'); [ apply Resource.lt_not_eq; apply (proj1 Ho) | rewrite <- e; rewrite <- e0; reflexivity ]
-    | rewrite remove_In_eq; [ apply (proj2 Ho) | ]
-    |
-    |
+    | rewrite remove_In_eq; [ apply (proj2 Ho) | intros ABS; apply (is_valid_cons f (h'::t')); [ rewrite e; apply Ho | right; apply ABS ] ]
+    | rewrite remove_In_eq; [ apply is_valid_elide with h'; apply Ho | apply is_valid_cons; rewrite e; apply (proj2 Ho) ]
+    | split; [ apply (proj1 Ho) | rewrite remove_In_head in IHP; [ apply IHP; apply (proj2 Ho) | apply sym_not_eq; apply n0 ] ]
     ]
   ].
-    
+Qed.
+
+Program Definition singleton_profile (f: Resource.t): profile :=
+  mkProfile [f] ResourceSet.empty _.
+
+(* XXX good definition *)
+Program Definition profile_add (P: profile) (f: Resource.t) :=
+  P.
 
 Section NDC_definition.
 (* ndproof:
@@ -344,112 +308,99 @@ Section NDC_definition.
    The ND calculus
  *)
 
-Inductive NDProof: list ResourceSet.t -> Resource.t -> Prop :=
+Inductive NDProof: list profile -> Resource.t -> Prop :=
   (* operational rules *)
   | nd_atom_mess: forall Ra Rb Pa Pb f, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
-      typable Rb f -> NDProof (Pa ++ Pb) f
-  | nd_bot: forall Ra Pa f1, typable_profile Ra Pa ->
-      typable Ra f1 ->
-      NDProof Pa (nd_impl f1 nd_bottom) ->
-      NDProof Pa (nd_not f1)
+      typable Rb f -> NDProof [Pa; Pb] f
+  | nd_bot: forall Ra Pa Rb f, typable_profile Ra Pa ->
+      typable Rb f ->
+      NDProof [Pa] nd_bottom ->
+      NDProof [Pa] f
   | nd_and_intro: forall Ra Rb Pa Pb f1 f2, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
       typable Ra f1 -> typable Rb f2 ->
-      NDProof Pa f1 -> NDProof Pb f2 ->
-      NDProof (Pa ++ Pb) (nd_and f1 f2)
+      NDProof [Pa] f1 -> NDProof [Pb] f2 ->
+      NDProof [Pa; Pb] (nd_and f1 f2)
   | nd_and_elim_l: forall Ra Rb Pa Pb f1 f2, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
       typable Ra f1 -> typable Rb f2 -> 
-      NDProof (Pa ++ Pb) (nd_and f1 f2) ->
-      NDProof (Pa ++ Pb) f1
+      NDProof [Pa; Pb] (nd_and f1 f2) ->
+      NDProof [Pa; Pb] f1
   | nd_and_elim_r: forall Ra Rb Pa Pb f1 f2, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
       typable Ra f1 -> typable Rb f2 ->
-      NDProof (Pa ++ Pb) (nd_and f1 f2) ->
-      NDProof (Pa ++ Pb) f2
+      NDProof [Pa; Pb] (nd_and f1 f2) ->
+      NDProof [Pa; Pb] f2
   | nd_or_intro_l: forall Ra Rb Pa Pb f1 f2, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
       typable Ra f1 -> typable Rb f2 ->
-      NDProof (Pa ++ Pb) f1 ->
-      NDProof (Pa ++ Pb) (nd_or f1 f2)
+      NDProof [Pa; Pb] f1 ->
+      NDProof [Pa; Pb] (nd_or f1 f2)
   | nd_or_intro_r: forall Ra Rb Pa Pb f1 f2, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
-      typable Ra f1 -> typable (Rb) f2 ->
-      NDProof (Pa ++ Pb) f2 ->
-      NDProof (Pa ++ Pb) (nd_or f1 f2)
+      typable Ra f1 -> typable Rb f2 ->
+      NDProof [Pa; Pb] f2 ->
+      NDProof [Pa; Pb] (nd_or f1 f2)
   | nd_or_elim: forall Ra Rb Rc Pa Pb f1 f2 g, typable_profile Ra Pa -> typable_profile Rb Pb ->
       repository_lt Ra Rb ->
       typable Ra f1 -> typable Rb f2 -> typable Rc g ->
-      NDProof (Pa ++ Pb) (nd_or f1 f2) ->
-      NDProof [ResourceSet.singleton f1] g ->
-      NDProof [ResourceSet.singleton f2] g ->
-      NDProof (Pa ++ Pb) g
+      NDProof [Pa; Pb] (nd_or f1 f2) ->
+      NDProof [singleton_profile f1] g ->
+      NDProof [singleton_profile f2] g ->
+      NDProof [Pa; Pb] g
   | nd_impl_intro: forall Ra Rb Rc Pa f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f1 -> typable Rc f2 ->
-      NDProof (Pa ++ [ResourceSet.singleton f1]) f2 ->
-      NDProof Pa (nd_impl f1 f2)
+      NDProof [Pa; singleton_profile f1] f2 ->
+      NDProof [Pa] (nd_impl f1 f2)
   | nd_impl_elim: forall Ra Rb Rc Pa  f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f1 -> typable Rc f2 ->
-      NDProof Pa (nd_impl f1 f2) ->
-      NDProof Pa f1 ->
-      NDProof (Pa ++ [ResourceSet.singleton f1]) f2
+      NDProof [Pa] (nd_impl f1 f2) ->
+      NDProof [Pa] f1 ->
+      NDProof [Pa; singleton_profile f1] f2
   (* access rules *)
-  | nd_read_distrib: forall Ra Rb Pa f1, typable_profile Ra Pa -> repository_lt Ra Rb ->
-      typable Rb f1 ->
-      NDProof Pa (nd_not (nd_read f1)) ->
-      NDProof Pa (nd_read (nd_not f1))
-  | nd_trust_distrib: forall Ra Rb Pa f1, typable_profile Ra Pa -> repository_lt Ra Rb ->
-      typable Rb f1 ->
-      NDProof Pa (nd_not (nd_trust f1)) ->
-      NDProof Pa (nd_trust (nd_not f1))
-  | nd_write_distrib: forall Ra Rb Pa f1, typable_profile Ra Pa -> repository_lt Ra Rb ->
-      typable Rb f1 ->
-      NDProof Pa (nd_not (nd_write f1)) ->
-      NDProof Pa (nd_write (nd_not f1))
   | nd_read_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
-      typable Rb f -> NDProof Pa (nd_read f)
+      typable Rb f -> NDProof [Pa] (nd_read f)
   | nd_trust_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f ->
-      NDProof Pa (nd_read f) ->
-      NDProof Pa (nd_trust f)
+      NDProof [Pa] (nd_read f) -> (* XXX is_valid ... -> *)
+      NDProof [Pa] (nd_trust f)
   | nd_write_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f ->
-      NDProof Pa (nd_read f) ->
-      NDProof Pa (nd_trust f) ->
-      NDProof Pa (nd_write f)
+      NDProof [Pa] (nd_read f) ->
+      NDProof [Pa] (nd_trust f) ->
+      NDProof [Pa] (nd_write f)
   | nd_exec: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f ->
-      NDProof Pa (nd_write f) ->
-      NDProof Pa f
+      NDProof [Pa] (nd_write f) ->
+      NDProof [Pa] f
   | nd_dtrust_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f ->
-      NDProof Pa (nd_impl (nd_read f) nd_bottom) ->
-      NDProof Pa (nd_not (nd_trust f))
+      NDProof [Pa] (nd_impl (nd_read f) nd_bottom) ->
+      NDProof [Pa] (nd_not (nd_trust f))
   | nd_dtrust_elim: forall Ra Rb Rc Pa f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f1 -> typable Rc f2 ->
-      NDProof Pa (nd_not (nd_trust f1)) ->
-      NDProof Pa (nd_impl (nd_not (nd_trust f1)) f2) ->
-      NDProof Pa (nd_write f2)
+      NDProof [Pa] (nd_not (nd_trust f1)) ->
+      NDProof [Pa] (nd_impl (nd_not (nd_trust f1)) f2) ->
+      NDProof [Pa] (nd_write f2)
   | nd_mtrust_intro: forall Ra Rb Pa f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Ra f1 -> typable Rb f2 ->
-      NDProof Pa (nd_impl (nd_read f2) nd_bottom) ->
-      NDProof [ResourceSet.singleton f1] (nd_impl (nd_read f2) nd_bottom) ->
-      NDProof (profile_remove f1 Pa ++ [ResourceSet.singleton f2]) (nd_not (nd_trust f1))
+      NDProof [Pa] (nd_impl (nd_read f2) nd_bottom) -> (* XXX is_valid ... -> *)
+      NDProof [profile_remove f1 Pa; singleton_profile f2] (nd_not (nd_trust f1))
   | nd_mtrust_elim: forall Ra Rb Rc Pa Pc f1 f2, typable_profile Ra Pa -> typable_profile Rc Pc -> repository_lt Ra Rb -> repository_lt Rc Rb ->
       typable Ra f1 -> typable Rb f2 ->
-      NDProof (profile_remove f1 Pa ++ [ResourceSet.singleton f2]) (nd_not (nd_trust f1)) ->
-      NDProof (profile_remove f1 Pa ++ Pc) (nd_trust f2)
+      NDProof [profile_remove f1 Pa; singleton_profile f2] (nd_not (nd_trust f1)) -> (* XXX is_valid -> *)
+      NDProof [profile_remove f1 Pa; Pc] (nd_trust f2)
   (* structural rules *)
   | nd_weakening: forall Ra Rb Pa f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Ra f1 -> typable Rb f2 ->
-      NDProof Pa (nd_write f1) ->
-      NDProof Pa (nd_trust f2) ->
-      NDProof (Pa ++ [ResourceSet.singleton f2]) (nd_write f1)
+      NDProof [Pa] (nd_write f1) ->
+      NDProof [Pa] (nd_trust f2) ->
+      NDProof [Pa; singleton_profile f2] (nd_write f1)
   | nd_contraction: forall Ra Rb Pa f g, typable_profile Ra Pa -> repository_lt Ra Rb ->
-      typable Ra f -> typable Rb f -> typable Ra g ->
-      profile_in f Pa -> NDProof (Pa ++ [ResourceSet.singleton f]) (nd_write f) ->
-      NDProof Pa (nd_write f)
-  (* exchange rule not needed? *)
+      typable Ra f -> typable Rb f -> typable Ra g -> 
+      NDProof [profile_add Pa f] (nd_write g) ->
+      NDProof [Pa] (nd_write g)
+  (* exchange rule covered by set stuff. *)
   | nd_cut: forall Ra Rb Pa Pb f1 f2, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
       typable Rb f1 -> typable Rb f2 ->
-      NDProof Pa f1 ->
-      profile_in f1 Pb -> NDProof (Pb) f2 ->
-      NDProof (Pa ++ Pb) f2.
+      NDProof [Pa] f1 ->
+      NDProof [Pb; singleton_profile f1] f2 ->
+      NDProof [Pa; Pb] f2.
 
 (*Axiom nd_import: forall f,
    NDProof (`Pa::nil) (nd_read f) ->
@@ -458,16 +409,16 @@ Inductive NDProof: list ResourceSet.t -> Resource.t -> Prop :=
 
 (* Properties of dominance *)
 Axiom typable_1_read: forall Ra Pa f, typable_profile Ra Pa ->
-  typable Ra f -> NDProof Pa (nd_read f).
+  typable Ra f -> NDProof [Pa] (nd_read f).
 Axiom typable_1_write: forall Ra Pa f, typable_profile Ra Pa ->
-  typable Ra f -> NDProof Pa (nd_write f).
+  typable Ra f -> NDProof [Pa] (nd_write f).
 Axiom typable_2_read: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
-  typable Rb f -> NDProof Pa (nd_read f).
+  typable Rb f -> NDProof [Pa] (nd_read f).
 Axiom typable_3_write: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
   typable Rb f ->
-  (NDProof Pa (nd_write f) <->
-     NDProof Pa (nd_read f) /\
-     NDProof Pa (nd_trust f)).
+  (NDProof [Pa] (nd_write f) <->
+     NDProof [Pa] (nd_read f) /\
+     NDProof [Pa] (nd_trust f)).
 
 (*Axiom proof_in: forall P x,
   NDProof (P::nil) x <-> In x P.
