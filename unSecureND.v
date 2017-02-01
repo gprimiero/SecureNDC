@@ -209,6 +209,7 @@ Record profile := mkProfile
     validity: is_valid ordered   
   }.
 
+(* XXX is this the right profile equality? *)
 Definition profile_eq (Pa: profile) (Pb: profile): Prop :=
   eqlistA Resource.eq (ordered Pa) (ordered Pb) /\
   ResourceSet.eq (separate Pa) (separate Pb).
@@ -281,7 +282,7 @@ Qed.
 
 Program Definition profile_remove (f: Resource.t) (P: profile): profile :=
   mkProfile (List.remove resource_eq_dec f (ordered P)) (ResourceSet.remove f (separate P)) _.
-Obligation 1 .
+Obligation 1.
   destruct P as [o s Ho]; simpl; functional induction (is_valid o); try auto;
   [ simpl; destruct (resource_eq_dec f h); try auto
   | simpl; destruct (resource_eq_dec f h); destruct (resource_eq_dec f h');
@@ -293,6 +294,13 @@ Obligation 1 .
   ].
 Qed.
 
+Program Definition singleton_profile (f: Resource.t): profile :=
+  mkProfile [f] ResourceSet.empty _.
+
+(* XXX good definition *)
+Program Definition profile_add (P: profile) (f: Resource.t) :=
+  P.
+
 Section NDC_definition.
 (* ndproof:
    hypotheses |- message
@@ -300,112 +308,99 @@ Section NDC_definition.
    The ND calculus
  *)
 
-Inductive NDProof: list ResourceSet.t -> Resource.t -> Prop :=
+Inductive NDProof: list profile -> Resource.t -> Prop :=
   (* operational rules *)
   | nd_atom_mess: forall Ra Rb Pa Pb f, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
-      typable Rb f -> NDProof (Pa ++ Pb) f
-  | nd_bot: forall Ra Pa f1, typable_profile Ra Pa ->
-      typable Ra f1 ->
-      NDProof Pa (nd_impl f1 nd_bottom) ->
-      NDProof Pa (nd_not f1)
+      typable Rb f -> NDProof [Pa; Pb] f
+  | nd_bot: forall Ra Pa Rb f, typable_profile Ra Pa ->
+      typable Rb f ->
+      NDProof [Pa] nd_bottom ->
+      NDProof [Pa] f
   | nd_and_intro: forall Ra Rb Pa Pb f1 f2, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
       typable Ra f1 -> typable Rb f2 ->
-      NDProof Pa f1 -> NDProof Pb f2 ->
-      NDProof (Pa ++ Pb) (nd_and f1 f2)
+      NDProof [Pa] f1 -> NDProof [Pb] f2 ->
+      NDProof [Pa; Pb] (nd_and f1 f2)
   | nd_and_elim_l: forall Ra Rb Pa Pb f1 f2, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
       typable Ra f1 -> typable Rb f2 -> 
-      NDProof (Pa ++ Pb) (nd_and f1 f2) ->
-      NDProof (Pa ++ Pb) f1
+      NDProof [Pa; Pb] (nd_and f1 f2) ->
+      NDProof [Pa; Pb] f1
   | nd_and_elim_r: forall Ra Rb Pa Pb f1 f2, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
       typable Ra f1 -> typable Rb f2 ->
-      NDProof (Pa ++ Pb) (nd_and f1 f2) ->
-      NDProof (Pa ++ Pb) f2
+      NDProof [Pa; Pb] (nd_and f1 f2) ->
+      NDProof [Pa; Pb] f2
   | nd_or_intro_l: forall Ra Rb Pa Pb f1 f2, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
       typable Ra f1 -> typable Rb f2 ->
-      NDProof (Pa ++ Pb) f1 ->
-      NDProof (Pa ++ Pb) (nd_or f1 f2)
+      NDProof [Pa; Pb] f1 ->
+      NDProof [Pa; Pb] (nd_or f1 f2)
   | nd_or_intro_r: forall Ra Rb Pa Pb f1 f2, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
-      typable Ra f1 -> typable (Rb) f2 ->
-      NDProof (Pa ++ Pb) f2 ->
-      NDProof (Pa ++ Pb) (nd_or f1 f2)
+      typable Ra f1 -> typable Rb f2 ->
+      NDProof [Pa; Pb] f2 ->
+      NDProof [Pa; Pb] (nd_or f1 f2)
   | nd_or_elim: forall Ra Rb Rc Pa Pb f1 f2 g, typable_profile Ra Pa -> typable_profile Rb Pb ->
       repository_lt Ra Rb ->
       typable Ra f1 -> typable Rb f2 -> typable Rc g ->
-      NDProof (Pa ++ Pb) (nd_or f1 f2) ->
-      NDProof [ResourceSet.singleton f1] g ->
-      NDProof [ResourceSet.singleton f2] g ->
-      NDProof (Pa ++ Pb) g
+      NDProof [Pa; Pb] (nd_or f1 f2) ->
+      NDProof [singleton_profile f1] g ->
+      NDProof [singleton_profile f2] g ->
+      NDProof [Pa; Pb] g
   | nd_impl_intro: forall Ra Rb Rc Pa f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f1 -> typable Rc f2 ->
-      NDProof (Pa ++ [ResourceSet.singleton f1]) f2 ->
-      NDProof Pa (nd_impl f1 f2)
+      NDProof [Pa; singleton_profile f1] f2 ->
+      NDProof [Pa] (nd_impl f1 f2)
   | nd_impl_elim: forall Ra Rb Rc Pa  f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f1 -> typable Rc f2 ->
-      NDProof Pa (nd_impl f1 f2) ->
-      NDProof Pa f1 ->
-      NDProof (Pa ++ [ResourceSet.singleton f1]) f2
+      NDProof [Pa] (nd_impl f1 f2) ->
+      NDProof [Pa] f1 ->
+      NDProof [Pa; singleton_profile f1] f2
   (* access rules *)
-  | nd_read_distrib: forall Ra Rb Pa f1, typable_profile Ra Pa -> repository_lt Ra Rb ->
-      typable Rb f1 ->
-      NDProof Pa (nd_not (nd_read f1)) ->
-      NDProof Pa (nd_read (nd_not f1))
-  | nd_trust_distrib: forall Ra Rb Pa f1, typable_profile Ra Pa -> repository_lt Ra Rb ->
-      typable Rb f1 ->
-      NDProof Pa (nd_not (nd_trust f1)) ->
-      NDProof Pa (nd_trust (nd_not f1))
-  | nd_write_distrib: forall Ra Rb Pa f1, typable_profile Ra Pa -> repository_lt Ra Rb ->
-      typable Rb f1 ->
-      NDProof Pa (nd_not (nd_write f1)) ->
-      NDProof Pa (nd_write (nd_not f1))
   | nd_read_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
-      typable Rb f -> NDProof Pa (nd_read f)
+      typable Rb f -> NDProof [Pa] (nd_read f)
   | nd_trust_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f ->
-      NDProof Pa (nd_read f) ->
-      NDProof Pa (nd_trust f)
+      NDProof [Pa] (nd_read f) -> (* XXX is_valid ... -> *)
+      NDProof [Pa] (nd_trust f)
   | nd_write_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f ->
-      NDProof Pa (nd_read f) ->
-      NDProof Pa (nd_trust f) ->
-      NDProof Pa (nd_write f)
+      NDProof [Pa] (nd_read f) ->
+      NDProof [Pa] (nd_trust f) ->
+      NDProof [Pa] (nd_write f)
   | nd_exec: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f ->
-      NDProof Pa (nd_write f) ->
-      NDProof Pa f
+      NDProof [Pa] (nd_write f) ->
+      NDProof [Pa] f
   | nd_dtrust_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f ->
-      NDProof Pa (nd_impl (nd_read f) nd_bottom) ->
-      NDProof Pa (nd_not (nd_trust f))
+      NDProof [Pa] (nd_impl (nd_read f) nd_bottom) ->
+      NDProof [Pa] (nd_not (nd_trust f))
   | nd_dtrust_elim: forall Ra Rb Rc Pa f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f1 -> typable Rc f2 ->
-      NDProof Pa (nd_not (nd_trust f1)) ->
-      NDProof Pa (nd_impl (nd_not (nd_trust f1)) f2) ->
-      NDProof Pa (nd_write f2)
+      NDProof [Pa] (nd_not (nd_trust f1)) ->
+      NDProof [Pa] (nd_impl (nd_not (nd_trust f1)) f2) ->
+      NDProof [Pa] (nd_write f2)
   | nd_mtrust_intro: forall Ra Rb Pa f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Ra f1 -> typable Rb f2 ->
-      NDProof Pa (nd_impl (nd_read f2) nd_bottom) ->
-      NDProof [ResourceSet.singleton f1] (nd_impl (nd_read f2) nd_bottom) ->
-      NDProof (profile_remove f1 Pa ++ [ResourceSet.singleton f2]) (nd_not (nd_trust f1))
+      NDProof [Pa] (nd_impl (nd_read f2) nd_bottom) -> (* XXX is_valid ... -> *)
+      NDProof [profile_remove f1 Pa; singleton_profile f2] (nd_not (nd_trust f1))
   | nd_mtrust_elim: forall Ra Rb Rc Pa Pc f1 f2, typable_profile Ra Pa -> typable_profile Rc Pc -> repository_lt Ra Rb -> repository_lt Rc Rb ->
       typable Ra f1 -> typable Rb f2 ->
-      NDProof (profile_remove f1 Pa ++ [ResourceSet.singleton f2]) (nd_not (nd_trust f1)) ->
-      NDProof (profile_remove f1 Pa ++ Pc) (nd_trust f2)
+      NDProof [profile_remove f1 Pa; singleton_profile f2] (nd_not (nd_trust f1)) -> (* XXX is_valid -> *)
+      NDProof [profile_remove f1 Pa; Pc] (nd_trust f2)
   (* structural rules *)
   | nd_weakening: forall Ra Rb Pa f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Ra f1 -> typable Rb f2 ->
-      NDProof Pa (nd_write f1) ->
-      NDProof Pa (nd_trust f2) ->
-      NDProof (Pa ++ [ResourceSet.singleton f2]) (nd_write f1)
+      NDProof [Pa] (nd_write f1) ->
+      NDProof [Pa] (nd_trust f2) ->
+      NDProof [Pa; singleton_profile f2] (nd_write f1)
   | nd_contraction: forall Ra Rb Pa f g, typable_profile Ra Pa -> repository_lt Ra Rb ->
-      typable Ra f -> typable Rb f -> typable Ra g ->
-      profile_in f Pa -> NDProof (Pa ++ [ResourceSet.singleton f]) (nd_write f) ->
-      NDProof Pa (nd_write f)
-  (* exchange rule not needed? *)
+      typable Ra f -> typable Rb f -> typable Ra g -> 
+      NDProof [profile_add Pa f] (nd_write g) ->
+      NDProof [Pa] (nd_write g)
+  (* exchange rule covered by set stuff. *)
   | nd_cut: forall Ra Rb Pa Pb f1 f2, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
       typable Rb f1 -> typable Rb f2 ->
-      NDProof Pa f1 ->
-      profile_in f1 Pb -> NDProof (Pb) f2 ->
-      NDProof (Pa ++ Pb) f2.
+      NDProof [Pa] f1 ->
+      NDProof [Pb; singleton_profile f1] f2 ->
+      NDProof [Pa; Pb] f2.
 
 (*Axiom nd_import: forall f,
    NDProof (`Pa::nil) (nd_read f) ->
@@ -414,16 +409,16 @@ Inductive NDProof: list ResourceSet.t -> Resource.t -> Prop :=
 
 (* Properties of dominance *)
 Axiom typable_1_read: forall Ra Pa f, typable_profile Ra Pa ->
-  typable Ra f -> NDProof Pa (nd_read f).
+  typable Ra f -> NDProof [Pa] (nd_read f).
 Axiom typable_1_write: forall Ra Pa f, typable_profile Ra Pa ->
-  typable Ra f -> NDProof Pa (nd_write f).
+  typable Ra f -> NDProof [Pa] (nd_write f).
 Axiom typable_2_read: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
-  typable Rb f -> NDProof Pa (nd_read f).
+  typable Rb f -> NDProof [Pa] (nd_read f).
 Axiom typable_3_write: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
   typable Rb f ->
-  (NDProof Pa (nd_write f) <->
-     NDProof Pa (nd_read f) /\
-     NDProof Pa (nd_trust f)).
+  (NDProof [Pa] (nd_write f) <->
+     NDProof [Pa] (nd_read f) /\
+     NDProof [Pa] (nd_trust f)).
 
 (*Axiom proof_in: forall P x,
   NDProof (P::nil) x <-> In x P.
