@@ -296,9 +296,13 @@ Qed.
 Program Definition singleton_profile (f: Resource.t): profile :=
   mkProfile [f] ResourceSet.empty _.
 
-Program Definition dep_extend (Pa: profile) (f: Resource.t) :=
+Check last.
+
+Program Definition dep_extend (Pa: profile) (f: Resource.t | is_valid (ordered Pa ++ [f])) :=
   mkProfile (ordered Pa ++ [f]) (separate Pa) _.
-Obligation 1.
+
+Program Definition indep_extend (Pa: profile) (f: Resource.t) :=
+  mkProfile (ordered Pa) (ResourceSet.add f (separate Pa)) (validity Pa).
 
 Section NDC_definition.
 (* ndproof:
@@ -312,12 +316,9 @@ Proof.
   simpl. trivial.
 Qed.
 
-Inductive NDProfile: profile -> Prop :=
-  | profile_empty: NDProfile (mkProfile [] ResourceSet.empty I)
-  | profile_pkg_insert f: NDProof [] f -> NDProfile (mkProfile [f] ResourceSet.empty I)
-  | profile_dep_insert f: NDProfile (dep_extend Pa f) -> NDProof (dep_extend Pa f) g -> NDProfile ((dep_extend Pa f) g)
-  | profile_pkg_extend f: NDProfile Pa -> NdProof [] f -> NDProfile (indep_extend Pa f)
-with NDProof: list profile -> Resource.t -> Prop :=
+(* There is no need to model the profile construction part of the calculus, since correct profiles are already
+ * assured by the is_valid predicate in the profile type *)
+Inductive NDProof: list profile -> Resource.t -> Prop :=
   (* operational rules *)
   | nd_atom_mess: forall Ra Rb Pa Pb f, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
       typable Rb f -> NDProof [Pa; Pb] f
@@ -366,7 +367,7 @@ with NDProof: list profile -> Resource.t -> Prop :=
       typable Rb f -> NDProof [Pa] (nd_read f)
   | nd_trust_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f ->
-      NDProof [Pa] (nd_read f) -> (* XXX is_valid ... -> *)
+      NDProof [Pa] (nd_read f) -> is_valid (ordered Pa ++ [f]) ->
       NDProof [Pa] (nd_trust f)
   | nd_write_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Rb f ->
@@ -388,11 +389,11 @@ with NDProof: list profile -> Resource.t -> Prop :=
       NDProof [Pa] (nd_write f2)
   | nd_mtrust_intro: forall Ra Rb Pa f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
       typable Ra f1 -> typable Rb f2 ->
-      NDProof [Pa] (nd_impl (nd_read f2) nd_bottom) -> (* XXX is_valid ... -> *)
+      NDProof [Pa] (nd_impl (nd_read f2) nd_bottom) -> is_valid (List.remove resource_eq_dec (ordered Pa) f1) ->
       NDProof [profile_remove f1 Pa; singleton_profile f2] (nd_not (nd_trust f1))
   | nd_mtrust_elim: forall Ra Rb Rc Pa Pc f1 f2, typable_profile Ra Pa -> typable_profile Rc Pc -> repository_lt Ra Rb -> repository_lt Rc Rb ->
       typable Ra f1 -> typable Rb f2 ->
-      NDProof [profile_remove f1 Pa; singleton_profile f2] (nd_not (nd_trust f1)) -> (* XXX is_valid -> *)
+      NDProof [profile_remove f1 Pa; singleton_profile f2] (nd_not (nd_trust f1)) -> is_valid (ordered Pc ++ f2) ->
       NDProof [profile_remove f1 Pa; Pc] (nd_trust f2)
   (* structural rules *)
   | nd_weakening: forall Ra Rb Pa f1 f2, typable_profile Ra Pa -> repository_lt Ra Rb ->
