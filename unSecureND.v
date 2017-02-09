@@ -206,10 +206,9 @@ Qed.
 Record profile := mkProfile
   { ordered: list Resource.t; 
     separate: ResourceSet.t;
-    validity: is_valid ordered   
+    validity: is_valid ordered
   }.
 
-(* XXX is this the right profile equality? *)
 Definition profile_eq (Pa: profile) (Pb: profile): Prop :=
   eqlistA Resource.eq (ordered Pa) (ordered Pb) /\
   ResourceSet.eq (separate Pa) (separate Pb).
@@ -297,9 +296,9 @@ Qed.
 Program Definition singleton_profile (f: Resource.t): profile :=
   mkProfile [f] ResourceSet.empty _.
 
-(* XXX good definition *)
-Program Definition profile_add (P: profile) (f: Resource.t) :=
-  P.
+Program Definition dep_extend (Pa: profile) (f: Resource.t) :=
+  mkProfile (ordered Pa ++ [f]) (separate Pa) _.
+Obligation 1.
 
 Section NDC_definition.
 (* ndproof:
@@ -308,7 +307,17 @@ Section NDC_definition.
    The ND calculus
  *)
 
-Inductive NDProof: list profile -> Resource.t -> Prop :=
+Lemma valid_empty: is_valid [].
+Proof.
+  simpl. trivial.
+Qed.
+
+Inductive NDProfile: profile -> Prop :=
+  | profile_empty: NDProfile (mkProfile [] ResourceSet.empty I)
+  | profile_pkg_insert f: NDProof [] f -> NDProfile (mkProfile [f] ResourceSet.empty I)
+  | profile_dep_insert f: NDProfile (dep_extend Pa f) -> NDProof (dep_extend Pa f) g -> NDProfile ((dep_extend Pa f) g)
+  | profile_pkg_extend f: NDProfile Pa -> NdProof [] f -> NDProfile (indep_extend Pa f)
+with NDProof: list profile -> Resource.t -> Prop :=
   (* operational rules *)
   | nd_atom_mess: forall Ra Rb Pa Pb f, typable_profile Ra Pa -> typable_profile Rb Pb -> repository_lt Ra Rb ->
       typable Rb f -> NDProof [Pa; Pb] f
