@@ -1,0 +1,559 @@
+\documentclass[]{llncs}
+\usepackage{graphicx}
+\usepackage{amssymb}
+\usepackage{bussproofs}
+\usepackage{url}
+
+
+\title{Managing software uninstall with negative trust}
+\author{Giuseppe Primiero \and Jaap Boender}
+\institute{Department of Computer Science\\Middlesex University London\\United Kingdom}
+
+\institute{Department of Computer Science\\ Middlesex University\\ United Kingdom\\ \email{G.Primiero@mdx.ac.uk\\J.Boender@mdx.ac.uk}}
+
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+A problematic aspect of software management systems in view of integrity preservation is the handling, approval, tracking and eventual execution of change requests. In the context of the relation between clients and repositories, trust can help identifying all packages required by the intended installation. Negative trust, in turn, can be used to approach the complementary problem induced by removing packages. In this paper we offer a logic for negative trust which allows to identify admissible and no-longer admissible software packages in the current installation profile in view of uninstall processes. We provide a simple working example and the system is formally verified using the Coq theorem prover.
+\end{abstract}
+
+
+\section{Introduction}\label{sec:intro}
+
+Software management configuration is among the most pervasive problems in modern personal computing, with complications caused by multiplication of users, required support for several software versions releases, increasing customization options and the need of coordination across distributed systems. One specific aspect of configuration management activities is change management, i.e. the handling, approval and tracking of change requests, with the aim of preserving the integrity of the system.
+
+Consider the following example. A user interacts with a software package system to install or remove applications. The set of packages installed on a machine is called the installation profile of that machine. A valid installation profile is one which meets all the dependencies and conflicts clauses of all the packages installed and such that it satisfies sufficient dependencies for any desired package to be executed. Assume the current installation profile contains: two packages $\phi_{1},\phi_{2}$ from the main repository; one package $\psi_{1}$ from the free repository; and one package $\xi_{1}$ from the non-free repository. Assume moreover that $\psi_{1}$ depends on $\phi_{1}$ and from $\phi_{2}$, while $\xi_{1}$ depends on $\psi_{1}$. Consider now the situation where the user wishes to prevent installation of a given additional package $\psi_{n}$ from the free repository, while wishing to install a package $\xi_{2}$ from the non-free repository: which other packages is she safe in installing? and which ones does she need to remove in order to avoid conflicts in the new installation? Determining these consistency relations between packages in a given installation is essential for system stability, but also to prevent the possibility of security threats in critical systems.
+
+%
+In \cite{4222580}, the problem of maintaining profile consistency and system integrity in view of uninstall processes is presented in the following terms:
+
+\begin{definition}\label{def:uninstallproblem}
+	(\textbf{Uninstall Problem}). Given a new package $\phi$ to install, determine the minimal number of packages (possibly
+	none) that must be removed from the system in order to make $\phi$ installable.
+\end{definition}
+This means identifying and removing all packages that are in conflict with the intended installation and its dependencies. This version of the problem can be complemented by that of identifying packages that depend on an undesired one.
+
+In this context, trust can be used to characterize the relations between clients, software packages (including their dependencies) and repositories during the installation process. A software package in conflict with the current installation profile can not be trusted under it and hence not installed; if already installed, trust needs to be removed. Hence, dealing with such processes requires an explicit treatment of \textit{negative trust}. Here and in the following the term \textit{untrust} is used as neutral for `negative trust' with respect to its derivatives \textit{mistrust} and \textit{distrust}: the former expresses trust removal, the latter trust denial. It should be noted that we refer to negative trust in the sense of being obtained through logical negation, as opposed to other quantitative approaches, where negative numbers are used. In \cite{DBLP:conf/ifiptm/Primiero16} a natural deduction calculus is formulated which offers a proof-theoretical semantics for both notions. On this basis, we adapt here the Uninstall Problem from Definition \ref{def:uninstallproblem} to the two semantics of untrust:
+
+
+\begin{itemize}
+	\item A user identifies a package $\phi$ which generates conflict with a desired installation; to preserve profile consistency, $\phi$ is \textit{distrusted} while the set of  packages not depending on $\phi$ remain installable;
+	\item A user identifies a package $\phi$ to be installed but in conflict with the current profile; to preserve profile consistency the packages $\psi_{i}, \dots, \psi_{n}$ in the installation profile  in conflict with $\phi$ are \textit{mistrusted}.
+\end{itemize}
+
+The Uninstall Problem from Definition \ref{def:uninstallproblem} can then be reformulated accordingly in the two variants:
+
+
+\begin{definition}\label{def:distrustedproblem}
+	(\textbf{Distrusted Uninstall Problem})
+	Given a package $\phi$ that should not be installed, determine which other packages can be installed (i.e. that do not require $\phi$).
+\end{definition}
+
+In this case, we are obviously interested in determining the maximal set of installable packages that do not conflict with $\phi$.
+
+\begin{definition}\label{defmdistrustedproblem}
+	(\textbf{Mistrusted Uninstall Problem})
+	Given a package $\phi$ that should be installed, but which is in conflict with the current profile, determine which packages need to be uninstalled in order for $\phi$ to become installable.
+\end{definition}
+
+As in the approach from \cite{4222580}, we are interested  here in determining the minimal set of packages inconsistent with $\phi$ that have to be removed from the installation profile.
+
+In the present paper we provide a solution to these two problems in software management through their formalization in a logic for negative trust. In our model we use a trust function to allow access relations that presuppose consistency; in the current interpretation, trust (and hence of consistency checks) applies to software packages and conflicts are treated through negative trust. Note that the kind of inconsistencies we consider are not just those induced by technical requirements of the packages, but also by security issues. This formal strategy can help in offering a computable approach to trust management and in reducing risks related to installation profile inconsistency. The logic allows to reason about statements of the form:
+
+\begin{quote}
+Installation profile $\Gamma$ allows consistent installation of package $\phi$ and prevents installation of conflicting package $\psi$.
+\end{quote}
+This approach is in the first place novel from a conceptual point of view, because software dependency satisfaction as trust management has not yet been largely investigated. Secondly, it is novel from a technical point of view, as  proof-theoretic solutions and the possibility of implementation in theorem provers for automatic inconsistency checking have been neglected so far. In comparison with existing approaches for the resolution of inconsistent installations, our underlying logic allows a finer-grained approach than, for example, SAT-solvers.
+
+
+The paper is structured as follows. In Section \ref{sec:related} we offer an overview of related works in the area of computational trust and software management. In Section \ref{sec:logic} we introduce the system \texttt{(un)SecureND}, which provides the formal machinery for our analysis. In Section \ref{sec:distrusted} the Distrusted Uninstall Problem is reformulated within our logic and its solution illustrated. In Section \ref{sec:mistrusted} the same is done for the Mistrusted Uninstall Problem. In Section \ref{sec:example} we present a simple scenario modelled by example derivations showing both cases at work. We conclude with some general remarks and a brief overview of future work.
+
+
+\section{Related Work}\label{sec:related}
+
+The present work sits at the intersection of the literature on software dependency management and computational trust. In this section we briefly overview related works in both areas and compare those to our approach and results.
+
+In \cite{DBLP:conf/pst/BoenderPR15}, we have offered a trust-based version of the optimization problem from  \cite{4222580}, known as the \textit{minimum install problem}, determining the optimal way to install a new package, where optimality is determined by an objective function to minimize the amount of dependencies satisfied such that it results in a valid installation profile. Trust is then used to guarantee that the minimal amount of dependencies  for each newly installed package is satisfied by transitively accessed repositories. The complementary problem of maintaining profile consistency and system integrity in view of uninstall processes can be similarly developed by applying the logic from \cite{DBLP:conf/ifiptm/Primiero16} to the software management context.
+
+In the context of software management, SAT solving appears as a promising approach for the development of efficient methods of dependency graph resolution. SAT technology has been used in \cite{DBLP:conf/kbse/MancinelliBCVDLT06} to validate dependencies and check installability of packages of specific Linux distribution. In Section \ref{sec:intro} we have illustrated our current task as resolving two variants of the \textit{Uninstall Problem} from \cite{4222580}. In that work the Opium package-management tool is introduced, also based on pseudo-boolean solvers. Opium is complete with respect to solution finding and can optimize a user-defined function, e.g. to prefer smaller packages over larger ones. An implementation of Opium is available as the 0install solver.\footnote{See \url{http://0install.net/solver.html}. An OCaml implementation is also available at \url{http://roscidus.com/blog/blog/2014/09/17/simplifying-the-solver-with-functors/}.}  A review of state-of-the-art package managers and their ability to keep up with evolution and their dependency solving abilities is offered in \cite{DBLP:journals/jss/AbateCTZ12}, with a proposal to treat dependency solving as a separate concern from other upgrade aspects. The upgrade problem is also considered in \cite{Abate:2011:MMP:2000229.2000255} to justify the design of a modular package manager. While we do not have an implementation of preferential settings based on user-choices, our installation profiles are defined according to a criterion of minimality for dependency satisfaction: this means that we construct installation profiles according to an ordered criterion of dependency satisfaction and package removal from a profile always proceeds to identify the minimal number of required packages. Also, in our approach we do not explicitly distinguish cases of upgrade as separate from installation of new packages: this is clearly a simplification, but the system can deal with upgrade with the more complex tactic of removing older versions and installing newer ones. The solvability of the decision problem related to software dependency management and its optimization are also considered in \cite{DBLP:conf/splc/BerreP08}. In the present paper our aim is to start an investigation in a proof-theoretical and trust-based approach to software dependency management, which so far has been neglected. We also hope to facilitate the introduction of automated theorem provers in the area, which can be beneficial in the checking process of intended installations in order to anticipate possible conflicts.
+
+An associated but distinct issue is the \textit{co-installability problem}: to quickly identify the components that can or cannot be installed together. It is related to boolean satisfiability and it is known to be algorithmically hard. It is shown to be especially complex for cases that include optimization by user preferences, where a combination of exact and approximate solving can help, \cite{Ignatiev:2014:TEO:2568225.2568306}. In \cite{Vouillon:2013:SCC:2522920.2522927} a formally certified semantic method preserving graph-theoretic transformations is developed to associate to each concrete component repository a much smaller one with a simpler structure. One aspect of co-installability is that of reciprocal dependencies \cite{DBLP:journals/eceasst/Boender11}, which as mentioned more explicitly later is abstracted from in the present formulation. The \textit{Mistrusted Uninstall Problem} formulated below replicates the intuition of the co-installability problem in the setting for external packages (and their dependencies) which are in explicit conflict with currently installed ones (and those they depend on). As for the latter work and the work presented in  \cite{DBLP:journals/jss/AbateCTZ12}, our system enjoys a formal translation to a library for the Coq theorem prover,\footnote{The repository is available at \url{https://github.com/gprimiero/SecureNDC}.} with the aim of verifying its results. Our system seems also to be the only one among those in the area of software management that relies on the explicit formulation of a natural deduction calculus.
+
+An essential characteristic of the method implemented in our system is that integrity checking on installation profiles is guaranteed through an explicit formulation of a trust access function on packages. The logic was first introduced in \cite{primiero_secureND} and extended to deal with negative trust in \cite{DBLP:conf/ifiptm/Primiero16}.  Recently, research has started considering the advantages, implications and formal requirements needed to deal with the various aspects of negated trust, and in particular the different meanings that can be attached to mistrust and distrust, including the extension and limits of  their transitivity and propagation protocols \cite{DBLP:conf/agents/McKnightC00,DBLP:conf/www/GuhaKRT04,marsh05,Ziegler:2005:PMT:1108451.1108466}. Most current research ignores the difference between the procedural semantics of these two terms, possibly with the exception of \cite{marsh05}, which presents mistrust as misplaced trust, untrust as little trust and distrust as no trust. This approach abstracts, though, from the reasons behind the attribution of these evaluations, in favour of a purely quantitative approach. Propagation for negative (first-order) trust is formulated in \cite{DBLP:conf/apccm/JosangP05}. Our contribution relies on a strict distinction between \textit{distrust} and \textit{mistrust}: the former is intended as trust denied to packages coming from outside of the current installation profile in view of inconsistencies with currently installed ones; the latter is understood as trust revoked to installed packages, in view of desired new packages to be installed. These two cases have not been in general treated separately. Our approach formalises them in the context of uninstall operations, which as far as we are aware are entirely missing from the literature. Moreover, treating (un)install operations in terms of (un)trust allows us to integrate a consistency check performed over profiles that satisfy dependencies for the packages involved.
+
+\section{\texttt{(un)SecureND}}\label{sec:logic}
+
+$\mathtt{(un)SecureND}$ is a natural deduction calculus defining trust, mistrust and distrust protocols introduced in \cite{primiero_secureND} for the positive fragment  and in \cite{DBLP:conf/ifiptm/Primiero16} for the negation complete extension. We offer here a slightly modified version adapted for the software management problems at hand. In particular, the present version introduces a strict partial ordering on formulas to express package dependency; this is then lifted at the level of contexts to express rules for installation profile construction and finally imported at the level of repositories where the associated packages are located. In view of this order relation the system qualifies as a substructural logic, in that Weakening is constrained by a trust function, Contraction and especially Exchange by the order relation.
+
+We start with introducing the language of our logic:
+
+\begin{definition}(\textbf{Syntax of $\mathtt{(un)SecureND}$})\label{def:syntax}
+	%
+	\begin{displaymath}
+	\begin{array}{l}
+	\mathcal{S}^{\sim}:= \{A< B< \dots\}\\
+	\phi^{S}:= a^{S}\mid \neg \phi^{S}_{i}\mid \phi^{S}_{i}\rightarrow \phi^{S}_{j}\mid \phi^{S}_{i}\wedge \phi^{S}_{j}\mid \phi^{S}_{i}\vee \phi^{S}_{j} \mid \bot \mid Read(\phi^{S})\mid Write(\phi^{S})\mid Trust(\phi^{S})\\
+	\Gamma^{S}:= \phi^{S}_{i} \mid \phi^{S}_{i} < \phi^{S}_{j} \mid \Gamma^{S}; \phi^{S}_{j}
+
+	\end{array}
+	\end{displaymath}
+\end{definition}
+%
+
+\subsection{Repositories, packages and dependencies}
+
+$\mathcal{S}^{\sim}$ is the set of software repositories ordered by $<$ in view of dependencies between packages they contain, obtained below as lifting from package dependency. $\phi^{S}$ is a meta-variable for formulae, expressing software packages and their logical composition inductively defined by connectives, including operations to read (query), trust (consistency checking) and write (install). The language includes $\bot$ to express conflicts: we formulate $\neg \phi_{i}^{A}$ as an abbreviation for $\phi_{i}^{A} \rightarrow \bot$. Packages are typed by their origin in repositories: $\phi^{S}_{i}$ says that package $\phi_{i}$ can be retrieved from repository $S \in \mathcal{S}$. An installation profile $\Gamma^{S}$ is the list of all packages sufficient to an access or execution operation; a profile is internally structured to reflect the dependency of packages through the partial order $<$ in $\mathcal{S}^{\sim}$. We allow extension of profiles by packages that are not dependent on previous ones, denoted by $\Gamma^{S};\Gamma^{S'}= \{ \phi^{S}_{i}< \dots < \phi^{S}_{n};\phi^{S'}_{n+1}\}$. This construction allows us to consider installation profiles that have all the sufficient conditions for the valid execution of a package, but can also be extended with additional packages. When such extension comes from the same repository, we use a comma:  $\Gamma^{S}, \phi^{S}_{i}$. The partial order allows for branching in the hierarchy, so that e.g. $\phi_{1}^{S}<\phi_{2}^{S}<\phi_{3}^{S}$ and $\phi_{1}^{S}<\phi_{2}^{S}<\phi_{4}^{S}$,  i.e. packages $\phi_{3}^{S},\phi_{4}^{S}$ have both dependencies on $\phi_{2}^{S}$ and transitively on $\phi_{1}^{S}$, but $\phi_{3}^{S},\phi_{4}^{S}$ could have no dependencies on each other.
+
+
+
+\begin{definition}[Judgements]
+An $\mathtt{(un)SecureND}$-judgement $\phi^{A}_{i} \vdash \psi^{B}_{j}$ says that a package $\psi_{j}$ from repository $B$ can be validly executed under a profile containing package $\phi_{i}$ from repository $A$.
+\end{definition}
+
+\begin{definition}[Validity]
+An $\mathtt{(un)SecureND}$-judgement $\vdash \phi^{A}_{i}$ says that a package $\phi_{i}$ from repository $A$ can be executed in \textit{any} profile.
+\end{definition}
+
+
+
+We now generalise the dependency relation between packages $\phi^{A}_{i}<\psi^{B}_{j}$ at the level of repositories. A partial order relation $<$ over $\mathcal{S}\times \mathcal{S}$ intuitively expresses that dependencies are satisfied across repositories.
+
+\begin{definition}\label{def:orderrepos}
+	$A< B$  iff $\exists \phi^{A}_{i}, \psi^{B}_{j}\ s.t.\ \phi^{A}_{i}<\psi^{B}_{j}$ and $\neg \exists \phi^{A}_{k}, \psi^{B}_{l}\ s.t.\ \psi^{B}_{l}<\phi^{A}_{k}$.
+\end{definition}
+By the first clause in Definition \ref{def:orderrepos}, $A< B$ means that some package in $A$ satisfies a dependency for a package in $B$. By the second clause in Definition \ref{def:orderrepos}, our order relation abstracts from the issue of reciprocal dependencies. As noted in~\cite{DBLP:journals/eceasst/Boender11}, two packages that mutually depend on each other will either be installed together, or not installed at all. They can therefore be considered as a single package for dependency resolution purposes.
+Rules from Figure \ref{fig:system0} define installation profiles construction from packages dependencies. Here we use the extra-theoretical typing declaration $\!:\!profile$ to state that a formal expression can be considered a valid installation profile. By Empty Profile, an installation profile can be empty (base case); by Package Insertion, the elements in an installation profile are packages; by Dependency Insertion, a profile can be extended by satisfied dependencies; by Profile Extension, if a package can be validly executed in an empty profile, it can be added to an existing profile. Notice that unnecessary packages from any repository can still be added: this is possible for packages without dependencies through the Profile Extension rule, but more in general by an application of the Weakening Rule (see Figure \ref{fig:system3}). The result of such a profile extension is denoted by $\Gamma^{A}; \phi^{B}$ and $\Gamma^{A}; \Gamma^{B}$. It is worth noting that Weakening will preserve profile consistency as it requires additionally an instance of the $trust$ rule (see Figure \ref{fig:system2}).
+
+\begin{figure*}[t]
+	\begin{prooftree}
+		\AxiomC{}
+		\RightLabel{Empty Profile}
+		\UnaryInfC{$\{\}: profile$}
+		\DisplayProof
+		\qquad
+		\AxiomC{$\vdash \phi^{A}_{i}$}
+		\RightLabel{Package Insertion}
+		\UnaryInfC{$ \phi^{A}_{i} \!:\!profile$}
+	\end{prooftree}
+
+
+	\begin{prooftree}
+	   	\AxiomC{$\Gamma^{A}, \phi^{A}_{i}: profile$}
+		\AxiomC{$\Gamma^{A}, \phi^{A}_{i}\vdash \psi^{B}_{j}$}
+		\RightLabel{Dependency Insertion}
+		\BinaryInfC{$\Gamma^{A}, \phi^{A}_{i}<\psi^{B}_{j} \!:\!profile$}
+	\end{prooftree}
+
+
+\begin{prooftree}
+			\AxiomC{$\Gamma^{A}: profile$}
+			\AxiomC{$\vdash \psi^{B}_{j}$}
+			\RightLabel{Profile Extension}
+			\BinaryInfC{$\Gamma^{A};\psi^{B}_{j} \!:\!profile$}
+		\end{prooftree}
+
+
+	\caption{The System \texttt{(un)SecureND}: Profile Construction Rules}\label{fig:system0}
+\end{figure*}
+
+
+
+
+\subsection{Rules for package execution}
+
+The operational rules in Figure \ref{fig:system1} formulate compositionality of package execution. A judgement of the form $\Gamma^{A}\vdash \phi^{B}$ says that package $\phi$ from repository $B$ is executable without errors within an installation profile with packages coming from repository $A$.
+
+
+\begin{figure*}[t]
+	\begin{prooftree}
+		\AxiomC{$\Gamma^{A};\Gamma^{B}: profile$}
+		\RightLabel{Atom, for any $\psi^{B}_{i}\in \Gamma^{B}$}
+		\UnaryInfC{$\Gamma^{A}; \Gamma^{B}\vdash \psi^{B}_{i}$}
+		\DisplayProof
+		\qquad
+		%
+		\AxiomC{$\Gamma^{A} \vdash \bot$}
+		\RightLabel{$\bot$}
+		\UnaryInfC{$\Gamma^{A}\vdash \phi^{B}$}
+	\end{prooftree}
+
+	\begin{prooftree}
+		\AxiomC{$\Gamma^{A} \vdash \phi^{A}_{i}$}
+		\AxiomC{$\Gamma^{B} \vdash \phi^{B}_{j}$}
+		\RightLabel{$\wedge$-I}
+		\BinaryInfC{$\Gamma^{A}; \Gamma^{B}  \vdash \phi^{A}_{i} \wedge \phi^{B}_{j}$}
+		\DisplayProof
+		\qquad
+		\AxiomC{$\Gamma^{A}; \Gamma^{B}  \vdash \phi^{A}_{i} \wedge \phi^{B}_{j}$}
+		\RightLabel{$\wedge$-E}
+		\UnaryInfC{$\Gamma^{A}; \Gamma^{B}   \vdash \phi^{I}_{i/j}$}
+	\end{prooftree}
+
+	\begin{prooftree}
+		\AxiomC{$\Gamma^{A}; \Gamma^{B} \vdash \phi^{I}_{i/j}$}
+		\RightLabel{$\vee$-I}
+		\UnaryInfC{$\Gamma^{A}; \Gamma^{B}  \vdash \phi^{A}_{i} \vee \phi^{B}_{j}$}
+		\DisplayProof
+		\quad
+		\AxiomC{$\Gamma^{A}; \Gamma^{B}\vdash \phi^{A}_{i} \vee \phi^{B}_{j}$}
+		\AxiomC{$ \phi^{I\in \{A,B\}}_{i/j} \vdash \psi^{C}_{k}$}
+		\RightLabel{$\vee$-E}
+		\BinaryInfC{$\Gamma^{A}; \Gamma^{B}  \vdash \psi^{C}_{k}$}
+	\end{prooftree}
+
+
+
+	\begin{prooftree}
+		\AxiomC{$\Gamma^{A}; \phi^{B}_{i} \vdash \phi^{C}_{j}$}
+		\RightLabel{$\rightarrow$-I}
+		\UnaryInfC{$\Gamma^{A}  \vdash \phi^{B}_{i} \rightarrow \phi^{C}_{j}$}
+		\DisplayProof
+		\qquad
+		\AxiomC{$\Gamma^{A}  \vdash \phi^{B}_{i} \rightarrow \phi^{C}_{j}$}
+		\AxiomC{$\Gamma^{A} \vdash \phi^{B}_{i} $}
+		\RightLabel{$\rightarrow$-E}
+		\BinaryInfC{$\Gamma^{A}; \phi^{B}_{i} \vdash \phi^{C}_{j}$}
+	\end{prooftree}
+
+
+
+	\caption{The System \texttt{(un)SecureND}: Operational Rules}\label{fig:system1}
+\end{figure*}
+
+The rule $Atom$ establishes valid package execution within the same installation profile and across repositories with satisfied dependencies. In the present version we assume $A<B$. $\bot$ says that if a profile is inconsistent, any package whatsoever can be executed. $\wedge$-I allows composition of packages from distinct profiles; by $\wedge$-E, each composing package can be obtained from the combined profiles (with $I=\{A,B\}$). $\vee$-I says that a combined profile can access any package from each of the composing profiles; by the elimination $\vee$-E, each package consistently inferred by each individual profile can also be executed under the extended profile. $\rightarrow$-Introduction expresses inference of a package from a combined profile as inference between packages (Deduction Theorem); its elimination $\rightarrow$-E allows to recover such inference as profile extension (Modus Ponens).
+
+\subsection{Access Rules}
+
+In Figure \ref{fig:system2} we present the access rules. These allow a user's installation profile to act on packages available from a distinct repository. In particular, we formulate a rule to query a package from a repository ($\mathit{read}$) and one to install a package within a profile ($\mathit{write}$). A third rule is formulated to guarantee that only packages consistent with the installation profile can be installed ($\mathit{trust}$).
+
+\begin{figure*}[t]
+	\centering
+	\begin{prooftree}
+		\AxiomC{}
+		\RightLabel{$\mathit{read}$}
+		\UnaryInfC{$\Gamma^{A}  \vdash Read(\phi^{B}_{i})$}
+		\end{prooftree}
+
+
+								\begin{prooftree}
+		\AxiomC{$\Gamma^{A} \vdash  Read(\phi^{B}_{i}) $}
+		\AxiomC{$\Gamma^{A};\phi^{B}_{i} : profile$}
+		\RightLabel{$\mathit{trust}$}
+		\BinaryInfC{$\Gamma^{A} \vdash  Trust(\phi^{B}_{i}) $}
+	\end{prooftree}
+
+	\begin{prooftree}
+		\AxiomC{$\Gamma^{A}  \vdash Read(\phi^{B}_{i})$}
+		\AxiomC{$\Gamma^{A} \vdash Trust(\phi^{B}_{i})$}
+		\RightLabel{$\mathit{write}$}
+		\BinaryInfC{$\Gamma^{A}  \vdash Write(\phi^{B}_{i})$}
+		\DisplayProof
+		\qquad
+		\AxiomC{$\Gamma^{A}  \vdash Write(\phi^{B}_{i})$}
+		\RightLabel{$\mathit{exec}$}
+		\UnaryInfC{$\Gamma^{A} \vdash \phi^{B}_{i}$}
+	\end{prooftree}
+
+	\begin{prooftree}
+		\AxiomC{$\Gamma^{A} \vdash  Read(\phi^{B}_{i})\rightarrow \bot $}
+		\RightLabel{DTrust-I}
+		\UnaryInfC{$\Gamma^{A}\vdash  \neg Trust(\phi^{B}_{i})$}
+		\end{prooftree}
+
+		\begin{prooftree}
+		\AxiomC{$\Gamma^{A} \vdash  \neg Trust(\phi^{B}_{i})$}
+		\AxiomC{$\Gamma^{A} \vdash \neg Trust(\phi^{B}_{i})\rightarrow \psi^{C}_{j}$}
+		\RightLabel{DTrust-E}
+		\BinaryInfC{$\Gamma^{A} \vdash Write(\psi^{C}_{j})$}
+	\end{prooftree}
+
+	\begin{prooftree}
+		\AxiomC{$\Gamma^{A} \vdash  Read(\psi^{B}_{i})\rightarrow \bot $}
+		\AxiomC{$\Gamma^{A}\setminus \{\phi^{A}_{j}\} : profile$}
+		\RightLabel{MTrust-I}
+		\BinaryInfC{$\Gamma^{A}\setminus \{\phi^{A}_{j}\}; \psi^{B}_{i} \vdash  \neg Trust(\phi^{A}_{j})$}
+	\end{prooftree}
+
+
+
+	\begin{prooftree}
+		\AxiomC{$\Gamma^{A}\setminus \{\phi^{A}_{j}\}; \psi^{B}_{i} \vdash  \neg Trust(\phi^{A}_{j})$}
+		\AxiomC{$\Gamma^{C}; \psi^{B}_{i} : profile$}
+		\RightLabel{MTrust-E, $\forall C<B$}
+		\BinaryInfC{$\Gamma^{A}\setminus \{\phi^{A}_{j}\};\Gamma^{C}\vdash Trust(\psi^{B}_{i})$}
+	\end{prooftree}
+	\caption{The System \texttt{(un)SecureND}: Access Rules}\label{fig:system2}
+\end{figure*}
+
+%
+
+
+
+$\mathit{read}$ says that from any consistent profile $\Gamma^{A}$ a package $\phi^{B}_{i}$ can be read provided its dependencies are satisfied (if any).
+$\mathit{trust}$ works as an elimination rule for $read$: it says that if a package $\phi^{B}_{i}$ can be read and it preserves profile consistency, then it can be trusted. $\mathit{write}$ works as an elimination rule for $trust$: it says that a readable and trustable package can be installed. $\mathit{exec}$ says that every package that is safely installed in a consistent profile can be executed in it. The Introduction rule for distrust DTrust-I expresses the principle that a package $\phi^{B}_{i}$ non-consistent with its installation profile can be negated to be trustworthy; the corresponding elimination DTrust-E uses $\rightarrow$-introduction to induce $write$ of any package consistent with the conflict resolution. The Introduction rule for mistrust MTrust-I says that trust is removed for local packages conflicting with an intended installation (a queried package); the corresponding MTrust-E allows to trust any package which is consistent with the conflict resolution by removal of the mistrusted package in the installation profile. This holds for any required dependency in other repositories, as expressed by the side condition that requires checking for any $C<B$. By the latter set of rules, \textit{distrust} is a flag for preventing installation of conflicting external packages, while \textit{mistrust} is a flag for facilitating removal of conflicting packages present in the installation profile. Notice that both untrust functions are triggered by the querying operation on a repository, hence conflicts are highlighted before installation.
+
+
+\subsection{Structural Rules}
+
+Structural rules hold with restrictions for $\mathtt{(un)SecureND}$, see Figure \ref{fig:system3}. As a result the system qualifies as substructural, see e.g. \cite{restall}.
+
+\begin{figure*}[t]
+	\begin{prooftree}
+		\AxiomC{$\Gamma^{A}\vdash Write(\phi^{A}_{i})$}
+		\AxiomC{$\Gamma^{A}\vdash Trust(\phi^{B}_{j})$}
+		\RightLabel{Profile Weakening}
+		\BinaryInfC{$\Gamma^{A}; \phi^{B}_{j}\vdash Write(\phi^{A}_{i})$}
+		\end{prooftree}
+
+		\begin{prooftree}
+		\AxiomC{$\Gamma^{A}, \phi^{A}_{i}; \phi^{B}_{i}\vdash Write(\psi^{A}_{k})$}
+		\AxiomC{$A<B$}
+		\RightLabel{Profile Contraction}
+		\BinaryInfC{$\Gamma^{A}, \phi^{A}_{i}\vdash Write(\psi^{A}_{k})$}
+	\end{prooftree}
+
+	\begin{prooftree}
+		\AxiomC{$\Gamma^{A}, \phi^{A}_{i}, \phi^{A}_{j}\vdash Write (\phi^{A}_{k})$}
+		\AxiomC{$\phi^{A}_{i}\nless \phi^{A}_{j}$}
+		\RightLabel{Profile Exchange}
+		\BinaryInfC{$\Gamma^{A}, \phi^{A}_{j}, \phi^{A}_{i}\vdash Write(\phi^{A}_{k})$}
+	\end{prooftree}
+
+	\begin{prooftree}
+		\AxiomC{$\Gamma^{A} \vdash \phi^{B}_{i}$}
+		\AxiomC{$\Gamma^{B}, \phi^{B}_{i}\vdash  \phi^{B}_{j}$ }
+		\RightLabel{Profile Cut}
+		\BinaryInfC{$\Gamma^{A}; \Gamma^{B}\vdash  \phi^{B}_{j}$}
+	\end{prooftree}
+	\caption{The System \texttt{(un)SecureND}: Structural Rules}\label{fig:system3}
+\end{figure*}
+
+
+Weakening is constrained by an instance of $trust$: it says that a valid installation of $\phi^{A}_{i}$ is preserved under a profile extension in view of a trusted package $\phi^{B}_{j}$, i.e. one whose profile extension is provably consistent.
+
+Contraction is constrained by preservation of package ordering: it says that a valid installation of $\phi^{A}_{k}$ is preserved when removing an instance of identical packages $\phi^{A}_{i}; \phi^{B}_{i}$, provided one preserves the package from the higher repository in the order dependency, so as to guarantee any further dependency below.
+
+Exchange is doubly constrained by order: it says that a valid installation of $\phi^{A}_{k}$ is preserved under reorder of packages $ \phi_{i}, \phi_{j}$, if those come from the same repository $A$ and if there is no involved dependency between them.
+
+Finally, the Cut rule expresses valid package execution under profile extension: if a package $\phi^{B}_{i}$ is validly executed under profile $\Gamma^{A}$ and a profile $\Gamma^{B}$ including $\phi^{B}_{i}$ allows execution of a package $\phi^{B}_{j}$, then the extended profile $\Gamma^{A}; \Gamma^{B}$ allows execution of $\phi^{B}_{j}$.
+
+
+\section{The Distrusted Uninstall Problem}\label{sec:distrusted}
+
+
+Consider a profile $\Gamma^{A}=\{\phi_{1}^{A}< \dots< \phi_{n}^{A}\}$ and a package $\phi_{m}^{B}$ which one wishes \textit{not to install}. This might be due to a security constraint, or an explicit conflict in view of an installed package $\phi^{A}_{i}\in \Gamma$, which one explicitly wants to preserve. We call such a package $\phi_{m}^{B}$ \textit{distrusted}. In the calculus, this corresponds to the conclusion of the DTrust-I rule
+
+$$\Gamma^{A}\vdash \neg Trust(\phi_{m}^{B})$$
+
+The \textit{Distrusted Uninstall Problem} is to determine which packages can be installed in $\Gamma^{A}$ that do not depend on $\phi_{m}^{B}$. Our formulation allows to express this principle as the request to obtain the maximal set of formulas $\{\psi_{i}^{N}\}$ from any repository $N\geq B$ such that
+
+$$\Gamma^{A}\vdash \neg Trust(\phi_{m}^{B})\rightarrow \{\psi_{i}^{N}\}$$
+
+By DTrust-E, this guarantees the right to install $\psi_{i}^{N}$. The first step consists in transforming our problem in a formulation that removes the trust condition.
+
+\begin{lemma}
+	$\Gamma^{A}\vdash \neg Trust(\phi_{m}^{B})\rightarrow \psi_{i}^{N}$ iff $\Gamma^{A}; \neg \phi_{m}^{B}\vdash \psi_{i}^{N}$.
+\end{lemma}
+
+\begin{proof}
+	For the left-to-right direction: By the assumption $\Gamma^{A}\vdash \neg Trust(\phi_{m}^{B})$ and consistency of negation, $\Gamma^{A}\vdash Trust(\neg \phi_{m}^{B})$; similarly, from the premise $\Gamma^{A}\vdash \neg Trust(\phi_{m}^{B})\rightarrow \psi_{i}^{N}$ and consistency of negation we get $\Gamma^{A}\vdash Trust( \neg\phi_{m}^{B})\rightarrow \psi_{i}^{N}$. Now apply $write$ to $Trust( \neg\phi_{m}^{B})$ and eliminate the function through $exec$; by $\rightarrow$-E we obtain $\Gamma^{A}; \neg \phi_{m}^{B}\vdash \psi_{i}^{N}$.
+
+	For the right-to-left direction: By the assumption $\Gamma^{A}; \neg \phi_{m}^{B}\vdash \psi_{i}^{N}$ it holds $\Gamma^{A}; \neg \phi^{B}_{m}: profile$, which justifies $\Gamma^{A}\vdash Read(\neg \phi^{B}_{m})$ by $read$, $\Gamma^{A}\vdash Trust(\neg \phi^{B}_{m})$ by the previous and $trust$ and $\Gamma^{A}\vdash \neg Trust( \phi^{B}_{m})$ by $\neg$-distribution. It follows $\Gamma^{A}; \neg Trust( \phi^{B}_{m})\vdash \psi_{i}^{N}$ by substitution from the assumption, and $\Gamma^{A}\vdash \neg Trust(\phi_{m}^{B})\rightarrow \psi_{i}^{N}$ is obtained by $\rightarrow$-I.
+\end{proof}
+
+
+We can now reduce the latter to an operation on all packages coming from the repository involved by the distrust operation:
+
+
+\begin{lemma}\label{th:setminus}
+	%The Distrust Uninstall Problem is equivalent to a proof of
+	If $\Gamma^{A}; \neg \phi_{m}^{B}\vdash \psi_{i}^{N}$ then $\Gamma^{A}; \Gamma^{B}\setminus \{\phi_{m}^{B}\}\vdash \psi_{i}^{N}$, for all consistent profiles $\Gamma^{B}$ that include $\phi_{m}^{B}$.
+\end{lemma}
+
+\begin{proof}
+
+$\Gamma^{A}$ can be extended with every consistent package from $B$; by definition $\Gamma^{A}; \neg \phi_{m}^{B}\vdash \neg Trust(\phi^{B}_{m})$, hence by Weakening this is possible except for $\phi^{B}_{m}$ as it does not satisfy $trust$.
+\end{proof}
+
+The above corresponds to finding the maximal set of formulas in $\Gamma^{B}$ that allows to execute $\psi_{i}^{N}$ without requiring $\phi_{m}^{B}$ in the profile. To this aim, it is enough to find all $\phi_{l}^{B}\ngtr\phi_{m}^{B}$, i.e. the set of packages in $B$ that have no dependencies from $\phi_{m}^{B}$.
+
+What has been so far restricted to one repository, can now be generalised to any repository that preserves the dependency condition:
+
+
+\begin{lemma}\label{th:gen}
+	$\Gamma^{A};\phi_{l}^{N}\vdash Write(\psi_{i}^{N})$ iff $(\phi_{l}^{N}\nless \xi_{m}^{N} \nless \psi^{N}_{i})$  for any distrusted package $\xi_{m}^{N}$ and any repository $N> A$.
+\end{lemma}
+
+\begin{proof}
+	For the right-to-left direction. Assume the following: $\Gamma^{A};\phi_{l}^{N}\vdash Write(\phi_{i}^{N})$ and $\Gamma^{A};\phi_{l}^{N}\vdash \neg Trust(\phi^{N}_{m})$. Then: if $\phi^{N}_{l}< \phi^{N}_{m}$, then $\Gamma^{A}; \phi^{N}_{l}\vdash \phi^{N}_{m}$ by Atom, contradicting the distrust assumption; and if $\phi^{N}_{m}< \phi^{N}_{i}$ then similarly $\phi^{N}_{m}\vdash \phi^{N}_{i}$ and by Weakening it is possible to obtain $\Gamma^{A};\phi_{l}^{N},\phi^{N}_{m} \vdash Write(\phi_{i}^{N})$, again contradicting the distrust assumption.
+
+	For the left-to-right direction. Assume $(\phi_{l}^{N}\nless \phi_{m}^{N} \nless \phi^{N}_{i})$ and $\Gamma^{A};\phi_{l}^{N}\vdash \neg Trust(\phi^{N}_{m})$. Then: because $\phi_{l}^{N}\nless \phi_{m}^{N}$, the second assumption above does not require to remove $\phi_{l}^{N}$ as by Lemma \ref{th:setminus}; and because $\phi_{m}^{N} \nless \phi^{N}_{i}$, installing the latter does not require installing the former.
+	%, as prescribed by Definition \ref{def:dependencypackages} via the $exec$ rule.
+	Hence $\Gamma^{A};\phi_{l}^{N}\vdash Write(\phi_{i}^{N})$ holds.
+\end{proof}
+
+Finally, our main result is obtained:
+
+\begin{theorem}(\textbf{Distrusted Uninstall})
+	Given a package $\phi^{B}_{m}$ distrusted under profile $\Gamma^{A}$, a package $\psi^{N}_{i}$ can be installed in $\Gamma^{A}$ iff $\phi^{B}_{m}\nless \psi^{N}_{i}$.
+\end{theorem}
+
+\begin{proof}
+	From Definition \ref{def:distrustedproblem} and Lemma \ref{th:gen} by substitution.
+\end{proof}
+
+This last result identifies distrusted packages as those that have at least a dependency from one package conflicting with the current installation profile.
+
+
+\section{The Mistrusted Uninstall Problem}\label{sec:mistrusted}
+
+Consider a profile $\Gamma^{A}=\{\phi_{1}^{A}< \dots< \phi_{n}^{A}\}$ and a package $\phi^{B}_{m}$ which one wishes to install in it: in the calculus, this corresponds to the conclusion of an instance of the Write rule, $\Gamma^{A}\vdash Write(\phi^{B}_{m})$. Assume that $\phi^{B}_{m}$ is in conflict with the given profile
+
+$$\Gamma^{A}\vdash Read(\phi^{B}_{m}) \rightarrow \bot$$
+
+The \textit{Mistrusted Uninstall Problem} is to determine the set $\Phi^{A}=\{\phi^{A}_{i}\in \Gamma^{A}\mid \phi^{A}_{i}\rightarrow \neg \phi^{B}_{m}\}$ which should be removed when installing $\phi^{B}_{m}$. We will call any such package $\phi^{A}_{i}$ a \textit{mistrusted package}. Hence the problem is to identify the minimal set of formulas $\Phi^{A}$ such that for each $\phi_{i}^{A}\in\Phi^{A}$
+
+$$\Gamma^{A}\setminus \Phi^{A}; \phi^{B}_{m}\vdash \neg Trust(\phi^{A}_{i})$$
+
+and by MTrust-E, given any other set of formulas $\Gamma^{C}$ required by $\phi^{B}_{m}$, it allows
+
+$$\Gamma^{A}\setminus \Phi^{A}; \Gamma^{C} \vdash Trust(\phi^{B}_{m})$$
+
+
+We start by identifying the minimal subset of packages from the current installation profile that satisfies the conflict:
+
+\begin{lemma}\label{th:gen2}
+	If $\Gamma^{A}\vdash Read(\phi^{B}_{m})\rightarrow \bot$, then $\exists \Phi^{A}\subseteq\Gamma^{A}$
+	such that $ \Phi^{A}=\{\phi^{A}_{i}< \dots< \phi^{A}_{n}\} \vdash Read(\phi^{B}_{m})\rightarrow \bot$.
+\end{lemma}
+%
+\begin{proof}
+$\forall \phi^{A}_{i}, \phi^{A}_{j}\in \Gamma^{A}$, if $\phi^{A}_{i}\vdash Read(\phi^{B}_{m})\rightarrow \bot$ and $\phi^{A}_{i}<\phi^{A}_{j}$, then $\phi^{A}_{j}\vdash Read(\phi^{B}_{m})\rightarrow \bot$. And $\forall \phi^{A}_{h}<\phi^{A}_{i}$, $\phi^{A}_{h}\vdash Read(\phi^{B}_{m})$. Hence it suffices to identify the maximal $\phi^{A}_{i}$ in conflict with $\phi^{B}_{m}$ and to include it in $\Phi^{A}$ together with all packages in $\Gamma^{A}$ that depend on it. We will call $\Phi^{A}$ a \textit{maximally mistrusted set}.
+\end{proof}
+
+
+\begin{lemma}\label{th:gen3.0}
+Consider a maximally mistrusted $\Phi^{A}\subseteq \Gamma^{A}$ such that $\Phi^{A} \vdash Read(\phi^{B}_{m})\rightarrow \bot$ as of Lemma \ref{th:gen2}. Then $\forall \phi^{A}_{i}\in \Phi^{A}$, $\phi^{A}_{i} < Read(\phi^{B}_{m})\rightarrow \bot$.
+\end{lemma}
+
+\begin{proof}
+This holds by construction of $\Phi^{A}$ in Lemma \ref{th:gen2} and the Dependency Insertion Rule.
+\end{proof}
+
+
+
+
+\begin{lemma}\label{th:gen3}
+	If $\phi^{A}_{i}\vdash Read(\phi^{B}_{m})\rightarrow \bot$, then $ \phi^{A}_{i}\nless \phi_{m}^{B}$.
+\end{lemma}
+
+\begin{proof}
+Starting from $\phi^{A}_{i}\vdash Read(\phi^{B}_{m})\rightarrow \bot$ we apply D-Trust-I, $\neg$-distribution, $write$ and  $exec$ to obtain $\phi^{A}_{i}\vdash \neg \phi^{B}_{m}$, from which we obtain $\phi^{A}_{i}< \neg \phi^{B}_{m}$ from Dependency Insertion and $\phi^{A}_{i}\nless \phi^{B}_{m}$ by contrapposition.
+
+\end{proof}
+
+
+
+
+
+\begin{theorem}(\textbf{Mistrusted Uninstall})
+	Given a package $\phi^{B}_{m}$ to be installed under profile $\Gamma^{A}$, a package $\phi^{A}_{i}$ is mistrusted in $\Gamma^{A}$ iff for all $\Gamma^{A}\subseteq\{\phi^{A}_{i}< \phi^{A}_{j}\}$
+
+	\begin{enumerate}
+	\item  $\Gamma^{A} \vdash \phi^{A}_{j}\rightarrow \neg \phi^{B}_{m}$,
+	\item $\phi^{A}_{j}< Read(\phi^{B}_{m})\rightarrow \bot$ and
+	\item $\phi^{A}_{i}\nless \phi^{B}_{m}$.
+	\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+The first condition is required by Lemma \ref{th:gen3.0} to include all the dependencies in the maximally mistrusted set. The second condition holds from Lemma \ref{th:gen3}. Finally, the third condition holds by contradiction: if $\phi^{A}_{i}< \phi^{B}_{m}$, then $\phi^{A}_{i}\vdash \phi^{B}_{m}$ by Dependency Insertion; it follows by Weakening that $\phi^{A}_{i}; \phi^{B}_{m}: profile$ and hence $\phi^{B}\vdash Trust (\phi^{A}_{i})$.
+\end{proof}
+
+
+This last result identifies packages to be removed as those that are in maximally mistrusted set and do not satisfy any dependency for the package to be installed under the current profile.
+
+
+
+\section{An Example}\label{sec:example}
+
+Consider the simple scenario presented in Section \ref{sec:intro} where a user has the following installation profile:
+
+
+
+$$
+\Gamma^{m-f-nf}
+\left\{
+\begin{array}{l}
+\Gamma^{main}=\{\phi^{m}_{1},\phi^{m}_{2}\}\\
+\Gamma^{free}=\{\psi^{f}_{1}\}\\
+\Gamma^{nonfree}=\{\xi^{nf}_{1}\}\\
+\end{array}
+\right\}
+$$
+\noindent with the following dependencies
+
+$$
+\Gamma^{m-f-nf}
+\left\{
+\begin{array}{l}
+\phi^{m}_{1}<\psi^{f}_{1}\\
+\phi^{m}_{2}<\psi^{f}_{1}\\
+\psi^{f}_{1}<\xi^{nf}_{1}\\
+\end{array}
+\right\}
+$$
+Assume the user distrusts a package $\psi^{f}_{n}$, e.g. because it is considered harmful or unsecure. The Distrusted Uninstall Problem asks which packages can be further installed in $\Gamma^{m-f-nf}$ without installing $\psi^{f}_{n}$.  Consider now a package $\psi^{f}_{2}\ngtr \psi^{f}_{n}$, then the following derivation holds:
+
+
+\begin{prooftree}
+		%\noline
+
+		\AxiomC{D}
+						\UnaryInfC{$\Gamma^{m-f-nf}\vdash \neg Trust(\psi^{f}_{n})$}
+					\AxiomC{D'}
+
+		\UnaryInfC{$\Gamma^{m-f-nf}\vdash Read(\psi^{f}_{2})$}
+		\AxiomC{$\psi^{f}_{n}\nless \psi^{f}_{2}$}
+	%	\AxiomC{$\Gamma^{m-f-nf}; \psi^{f}_{2}\vdash wf$}
+		\RightLabel{}
+%		\TrinaryInfC{$\Gamma^{m-f-nf}; \psi^{f}_{2}\vdash wf$}
+			\TrinaryInfC{$\Gamma^{m-f-nf}\vdash Write(\psi^{f}_{2})$}
+	\end{prooftree}
+In other words, flagging $\psi^{f}_{n}$ as distrustful does not impede the installation of a package $\psi^{f}_{2}$ if the latter does not depend on the former.
+
+Assume moreover that the user wishes to install an additional package $\xi^{nf}_{2}>\phi^{m}_{1}$, but such that  $\phi^{m}_{2}\vdash Read(\xi^{nf}_{2})\rightarrow \bot$: in other words, $\xi^{nf}_{2}$ depends on $\phi^{m}_{1}$, but is in conflict with $\phi^{m}_{2}$ (which is possible, given the latter does not depend on $\phi^{m}_{1}$). Then assuming a package $\psi^{f}_{2}$ replacing the functionalities of $\phi^{m}_{2}$,  the following derivation holds:
+
+
+
+\begin{prooftree}
+		%\noline
+
+		\AxiomC{$\phi^{m}_{2}\vdash Read(\xi^{nf}_{2})\rightarrow \bot$}
+		\AxiomC{$\phi^{m}_{2}<\psi^{f}_{1}$}
+						\BinaryInfC{$\Gamma^{m-f-nf}\setminus \{\phi^{m}_{2}<\psi^{f}_{1}\}; \xi^{nf}_{2}\vdash \neg Trust(\phi^{m}_{2}<\psi^{f}_{1})$}
+						\AxiomC{$\psi^{f}_{2};\xi^{nf}_{2}: profile$}
+
+		\BinaryInfC{$\Gamma^{m-f-nf}\setminus \{\phi^{m}_{2}<\psi^{f}_{1}\}; \xi^{nf}_{2}\vdash Write(\psi^{f}_{2})$}
+	\end{prooftree}
+In other words the installation of $\xi^{nf}_{2}$ requires removing $\phi^{m}_{2}<\psi^{f}_{1}$ and it is compatible with the installation of $\psi^{f}_{2}$.
+
+
+
+\section{Conclusions}
+
+In this paper we have formulated two variants to the Uninstall Problem. Each relies on a different semantic qualification of untrusted packages required to be removed or prevented from installation in a given installation profile, in order to preserve consistency.
+
+Our approach is grounded on the logic \texttt{(un)SecureND}, including an explicit $trust$ function on formulas to guarantee consistency check at each retrieval step (after a $read$ function), before installation rights are granted for a package (by a $write$ function). The fragment of the language presented in this paper allows to express negation over trust as a dis-installation requirement. Different pairs of introduction/elimination rules determine the selection of one of two resolution strategies: one flags a package external to the installation profile as distrusted and hence as not installable; the other identifies already installed packages to be removed. The selection takes care of identifying and removing all required dependencies. We have illustrated the working protocol through an easy example. As already mentioned, validation of the system is obtained by implementation of the \texttt{(un)SecureND} calculus as a large inductive type in the Coq proof assistant. The development is available at \url{https://github.com/gprimiero/SecureNDC}.
+% It makes it possible to express and prove the lemmas and theorems from sections~\ref{sec:distrusted} and~\ref{sec:mistrusted}.
+
+A characteristic of the logic \texttt{(un)SecureND} is its substructural nature, which in future work can be exploited to investigate cases of strengthened and limited resource redundancy for fault tolerance and source shuffling for security. Other applications of negative trust can be investigated to distinguish between malevolent and simply unsuccessful sources.
+
+
+
+\bibliographystyle{plain}
+\bibliography{unsecureNDC}
+\end{document}
