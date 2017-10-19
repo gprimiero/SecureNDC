@@ -535,7 +535,7 @@ Inductive NDProof: profile -> Resource.t -> Prop :=
       NDProof Pa (nd_read f)
   | nd_trust_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_leq Ra Rb ->
       typable Rb f ->
-      NDProof Pa (nd_read f) -> is_valid_aux (ordered Pa ++ [f]) ->
+      NDProof Pa (nd_read f) ->
       NDProof Pa (nd_trust f)
   | nd_write_intro: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_leq Ra Rb ->
       typable Rb f ->
@@ -599,6 +599,8 @@ Axiom typable_3_write: forall Ra Rb Pa f, typable_profile Ra Pa -> repository_le
 Axiom proof_eq: forall P1 P2 f1 f2, profile_eq P1 P2 -> Resource.eq f1 f2 ->
   NDProof P1 f1 -> NDProof P2 f2.
 
+End NDC_definition.
+
 Add Morphism NDProof with signature profile_eq ==> Resource.eq ==> Logic.iff as ndproof_m.
 Proof.
   intros; split; intros;
@@ -606,5 +608,3 @@ Proof.
   | apply proof_eq with y y0; try symmetry
   ]; assumption.
 Qed.
-
-End NDC_definition.
