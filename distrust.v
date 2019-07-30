@@ -84,6 +84,25 @@ Proof.
   apply nd_read_intro with R1 R2; sprem.
 Qed.
 
+(*Lemma implication: forall R P x y,
+  typable_profile R P -> typable R x -> typable R y ->
+  NDProof (profile_merge (profile_merge P (singleton_profile x)) (singleton_profile (nd_impl x y))) y.
+Proof.
+  intros. rewrite <- profile_merge_assoc. rewrite <- (profile_merge_self (singleton_profile x)).
+  rewrite <- (profile_merge_assoc (singleton_profile x) (singleton_profile x) _).
+  rewrite (profile_merge_comm (singleton_profile x) (singleton_profile (nd_impl x y))).
+  rewrite profile_merge_assoc. rewrite profile_merge_assoc.
+  apply nd_impl_elim with R R R; sprem.
+  apply nd_atom_rule with R R; sprem.
+  rewrite profile_merge_comm.
+  apply nd_atom_rule with R R; sprem.
+Qed.*)
+
+Axiom empty_blerp: forall Pa f,
+  NDProof empty_profile f -> 
+  NDProof Pa f.
+(* proof through repeated applications of the weakening rule *)
+
 Axiom down_typability:
   forall x R1 R2, typable R1 x -> repository_lt R1 R2 -> typable R2 x.
 
@@ -128,4 +147,8 @@ Proof.
   apply nd_atom_rule with Rb Rb; sprem.
   apply nd_impl_elim with Ra Rb Rn; sprem.
   apply f_distrusted.
+<<<<<<< HEAD
 Qed.
+=======
+Qed.
+>>>>>>> Committed WIP
