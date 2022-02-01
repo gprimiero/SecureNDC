@@ -6,6 +6,9 @@ Require Import Coq.Structures.Orders.
 Require Export MSets.
 Require Import Program.
 Require Import Arith.
+Require Import FunInd.
+Import ListNotations.
+Require Import RelationClasses.
 
 (* Repository type: *)
 Module Type REPOSITORY <: DecidableType.
@@ -145,11 +148,11 @@ Module RESOURCE (R: REPOSITORY) (Atom: ATOM R) <: OrderedBool.
     ].
   Qed.
 
-  Axiom lt_trans: forall x y z: t, lt x y -> lt y z -> lt x z.
-  Axiom lt_not_eq: forall x y: t, lt x y -> ~ eq x y.
-  Axiom lt_strorder: StrictOrder lt.
+  Axiom lt_trans: Transitive lt.
+  Axiom lt_irrefl: Irreflexive lt.
   Axiom lt_compat : Proper (eq==>eq==>iff) lt.
- 
+  Instance lt_strorder: StrictOrder lt := Build_StrictOrder lt lt_irrefl lt_trans.
+
   Parameter compare: t -> t -> comparison.
   Parameter compare_spec : forall s s', CompareSpec (eq s s') (lt s s') (lt s' s) (compare s s').
 
@@ -239,7 +242,7 @@ Proof.
   intros h t H; induction t;
   [ apply in_nil
   | apply <- not_in_cons; split;
-    [ intro H0; apply (Resource.lt_not_eq h a); [ apply (proj1 H) | rewrite H0; reflexivity ]
+    [ intro H0; apply (Resource.lt_irrefl h); rewrite H0 at 2; apply (proj1 H)
     | apply IHt; induction t;
       [ simpl; auto
       | split;
@@ -388,7 +391,7 @@ Obligation 1.
   destruct P as [o s Ho]; simpl; functional induction (is_valid_aux o); try auto; simpl;
   [ destruct (resource_eq_dec f h); try auto
   | destruct (resource_eq_dec f h); destruct (resource_eq_dec f h');
-    [ absurd (Resource.eq h h'); [ apply Resource.lt_not_eq; apply (proj1 Ho) | rewrite <- e; rewrite <- e0; reflexivity ]
+    [ absurd (Resource.lt h h'); [ rewrite <- e; rewrite <- e0; intro H; apply (Resource.lt_irrefl f H) | apply (proj1 Ho) ]
     | rewrite remove_In_eq; [ apply (proj2 Ho) | intros ABS; apply (is_valid_aux_cons f (h'::t')); [ rewrite e; apply Ho | right; apply ABS ] ]
     | rewrite remove_In_eq; [ apply is_valid_aux_elide with h'; apply Ho | apply is_valid_aux_cons; rewrite e; apply (proj2 Ho) ]
     | split; [ apply (proj1 Ho) | rewrite remove_In_head in IHP; [ apply IHP; apply (proj2 Ho) | apply sym_not_eq; apply n0 ] ]

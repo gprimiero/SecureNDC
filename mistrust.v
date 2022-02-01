@@ -30,5 +30,4 @@ Proof.
     simpl; trivial.
   apply nd_trust_intro with Ra Ra; sprem.
   apply nd_read_intro with Ra Rb; sprem.
-    simpl; trivial.
 Qed.
