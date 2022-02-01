@@ -147,8 +147,4 @@ Proof.
   apply nd_atom_rule with Rb Rb; sprem.
   apply nd_impl_elim with Ra Rb Rn; sprem.
   apply f_distrusted.
-<<<<<<< HEAD
 Qed.
-=======
-Qed.
->>>>>>> Committed WIP
